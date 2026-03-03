@@ -237,11 +237,6 @@
       <input type="range" id="site-opacity" min="0.02" max="1" step="0.01" value="0.12" oninput="updateSiteOpacity()">
       <span class="val-display" id="site-opacity-val">0.12</span>
     </div>
-    <div class="row">
-      <label>Occlusion</label>
-      <input type="range" id="occlusion" min="0" max="1" step="0.01" value="0.18" oninput="updateOcclusion()">
-      <span class="val-display" id="occlusion-val">0.18</span>
-    </div>
   </div>
 
   <div class="section">
@@ -456,84 +451,115 @@ THREE.GLTFLoader=GLTFLoader;
 })();
 
 // ─────────────────────────────────────────────
-// OrbitControls inline
+// OrbitControls — smooth inertia, delta-time based
 // ─────────────────────────────────────────────
 (function(){
 THREE.OrbitControls=function(camera,domElement){
-  const controls=this;
+  const self=this;
   this.camera=camera;
   this.domElement=domElement;
   this.target=new THREE.Vector3();
   this.minDistance=0;this.maxDistance=Infinity;
-  this.enableDamping=true;this.dampingFactor=0.08;
-  this.rotateSpeed=0.6;this.zoomSpeed=1.0;this.panSpeed=0.8;
+  this.rotateSpeed=1.0;this.zoomSpeed=0.12;this.panSpeed=1.0;
 
-  const spherical=new THREE.Spherical();
-  const sphericalDelta=new THREE.Spherical();
-  let scale=1;
-  const panOffset=new THREE.Vector3();
+  // Current spherical coords
+  const sph=new THREE.Spherical();
+  // Velocity accumulators (per-frame, pre-damping)
+  let vTheta=0,vPhi=0,vZoom=0;
+  const vPan=new THREE.Vector3();
+  // Target spherical (what we're lerping toward)
+  const tSph=new THREE.Spherical();
+  const tPan=new THREE.Vector3();
+
+  const DAMPING=0.12; // fraction applied per 16ms frame — frame-rate compensated
+
+  const syncFromCamera=()=>{
+    const off=new THREE.Vector3().subVectors(camera.position,self.target);
+    sph.setFromVector3(off);
+    tSph.copy(sph);
+  };
+  syncFromCamera();
+
   let isDragging=false,isPanning=false;
   let prevMouse={x:0,y:0};
 
-  const updateSpherical=()=>{
-    const offset=new THREE.Vector3().subVectors(camera.position,controls.target);
-    spherical.setFromVector3(offset);
-  };
-  updateSpherical();
-
-  this.update=function(){
-    spherical.theta+=sphericalDelta.theta;
-    spherical.phi+=sphericalDelta.phi;
-    spherical.phi=Math.max(0.01,Math.min(Math.PI-0.01,spherical.phi));
-    spherical.radius=Math.max(controls.minDistance,Math.min(controls.maxDistance,spherical.radius*scale));
-    controls.target.add(panOffset);
-    const offset=new THREE.Vector3().setFromSpherical(spherical);
-    camera.position.copy(controls.target).add(offset);
-    camera.lookAt(controls.target);
-    if(controls.enableDamping){
-      sphericalDelta.theta*=(1-controls.dampingFactor);
-      sphericalDelta.phi*=(1-controls.dampingFactor);
-      panOffset.multiplyScalar(1-controls.dampingFactor);
-    }else{sphericalDelta.set(0,0,0);panOffset.set(0,0,0);}
-    scale=1;
+  // Helper: pan in camera space
+  const doPan=(dx,dy)=>{
+    const dist=sph.radius;
+    const fovScale=2*Math.tan((camera.fov*Math.PI/180)*0.5)*dist;
+    const right=new THREE.Vector3().crossVectors(
+      camera.getWorldDirection(new THREE.Vector3()),camera.up).normalize();
+    const up=camera.up.clone().normalize();
+    vPan.addScaledVector(right,-dx*fovScale*self.panSpeed);
+    vPan.addScaledVector(up,   dy*fovScale*self.panSpeed);
   };
 
+  this.update=function(dt){
+    // dt in seconds, default to 16ms
+    const t=Math.min(dt||0.016,0.05);
+    // Frame-rate independent damping: factor per frame at 60fps, scaled
+    const d=1-Math.pow(1-DAMPING,t*60);
+
+    // Integrate velocities → target spherical
+    tSph.theta+=vTheta;
+    tSph.phi  +=vPhi;
+    tSph.phi=Math.max(0.02,Math.min(Math.PI-0.02,tSph.phi));
+    tSph.radius=Math.max(self.minDistance,Math.min(self.maxDistance,tSph.radius*(1+vZoom)));
+    self.target.add(vPan);
+
+    // Decay velocities
+    vTheta*=(1-d);vPhi*=(1-d);vZoom*=(1-d);vPan.multiplyScalar(1-d);
+
+    // Smooth current toward target
+    sph.theta +=(tSph.theta -sph.theta)*d*6;
+    sph.phi   +=(tSph.phi   -sph.phi  )*d*6;
+    sph.radius+=(tSph.radius-sph.radius)*d*6;
+
+    const off=new THREE.Vector3().setFromSpherical(sph);
+    camera.position.copy(self.target).add(off);
+    camera.lookAt(self.target);
+  };
+
+  // ── Mouse ──
   domElement.addEventListener('mousedown',e=>{
-    isDragging=true;isPanning=(e.button===2||e.button===1);
-    prevMouse={x:e.clientX,y:e.clientY};e.preventDefault();
+    isDragging=true;
+    isPanning=(e.button===2||e.button===1||(e.button===0&&e.shiftKey));
+    prevMouse={x:e.clientX,y:e.clientY};
+    e.preventDefault();
   });
   domElement.addEventListener('mousemove',e=>{
     if(!isDragging)return;
     const dx=(e.clientX-prevMouse.x)/domElement.clientHeight;
     const dy=(e.clientY-prevMouse.y)/domElement.clientHeight;
     if(isPanning){
-      const dist=new THREE.Vector3().subVectors(camera.position,controls.target).length();
-      const right=new THREE.Vector3().crossVectors(camera.getWorldDirection(new THREE.Vector3()),camera.up).normalize();
-      const up=camera.up.clone();
-      panOffset.addScaledVector(right,-dx*dist*controls.panSpeed*2);
-      panOffset.addScaledVector(up,dy*dist*controls.panSpeed*2);
+      doPan(dx,dy);
     }else{
-      sphericalDelta.theta-=dx*2*Math.PI*controls.rotateSpeed;
-      sphericalDelta.phi-=dy*2*Math.PI*controls.rotateSpeed;
+      vTheta-=dx*Math.PI*self.rotateSpeed;
+      vPhi  -=dy*Math.PI*self.rotateSpeed;
     }
     prevMouse={x:e.clientX,y:e.clientY};
   });
   window.addEventListener('mouseup',()=>{isDragging=false;});
   domElement.addEventListener('wheel',e=>{
-    scale*=(e.deltaY>0)?1.1:0.9;e.preventDefault();
+    // Normalise across devices
+    let delta=e.deltaY;
+    if(e.deltaMode===1)delta*=33;
+    if(e.deltaMode===2)delta*=500;
+    vZoom+=delta*self.zoomSpeed*0.001;
+    e.preventDefault();
   },{passive:false});
   domElement.addEventListener('contextmenu',e=>e.preventDefault());
 
-  // Touch
-  let touches=[];
+  // ── Touch ──
   let lastPinchDist=0;
+  let lastTouchMid={x:0,y:0};
   domElement.addEventListener('touchstart',e=>{
-    touches=Array.from(e.touches);
-    if(touches.length===1)prevMouse={x:touches[0].clientX,y:touches[0].clientY};
-    if(touches.length===2){
-      const dx=touches[0].clientX-touches[1].clientX;
-      const dy=touches[0].clientY-touches[1].clientY;
+    const ts=Array.from(e.touches);
+    if(ts.length===1){prevMouse={x:ts[0].clientX,y:ts[0].clientY};}
+    if(ts.length===2){
+      const dx=ts[0].clientX-ts[1].clientX,dy=ts[0].clientY-ts[1].clientY;
       lastPinchDist=Math.sqrt(dx*dx+dy*dy);
+      lastTouchMid={(ts[0].clientX+ts[1].clientX)*0.5,(ts[0].clientY+ts[1].clientY)*0.5};
     }
     e.preventDefault();
   },{passive:false});
@@ -542,13 +568,20 @@ THREE.OrbitControls=function(camera,domElement){
     if(ts.length===1){
       const dx=(ts[0].clientX-prevMouse.x)/domElement.clientHeight;
       const dy=(ts[0].clientY-prevMouse.y)/domElement.clientHeight;
-      sphericalDelta.theta-=dx*2*Math.PI*controls.rotateSpeed;
-      sphericalDelta.phi-=dy*2*Math.PI*controls.rotateSpeed;
+      vTheta-=dx*Math.PI*self.rotateSpeed;
+      vPhi  -=dy*Math.PI*self.rotateSpeed;
       prevMouse={x:ts[0].clientX,y:ts[0].clientY};
     }else if(ts.length===2){
       const dx=ts[0].clientX-ts[1].clientX,dy=ts[0].clientY-ts[1].clientY;
       const d=Math.sqrt(dx*dx+dy*dy);
-      scale*=lastPinchDist/d;lastPinchDist=d;
+      const ratio=lastPinchDist/d;
+      vZoom+=(ratio-1)*0.5;
+      lastPinchDist=d;
+      // Two-finger pan
+      const mx=(ts[0].clientX+ts[1].clientX)*0.5;
+      const my=(ts[0].clientY+ts[1].clientY)*0.5;
+      doPan((mx-lastTouchMid.x)/domElement.clientHeight,(my-lastTouchMid.y)/domElement.clientHeight);
+      lastTouchMid={x:mx,y:my};
     }
     e.preventDefault();
   },{passive:false});
@@ -595,7 +628,6 @@ const layerVisible={spaces:true,compressed:true,infra:true,site:true,lines:true,
 let explodeAmount=0;
 let explodeAxis='xyz';
 let siteOpacity=0.12;
-let occlusionStrength=0.18;
 let cloudObject=null;
 let explodeCenters=[];
 let explodeOriginals=[];
@@ -603,29 +635,17 @@ let explodeOriginals=[];
 // ─────────────────────────────────────────────
 // Materials helper
 // ─────────────────────────────────────────────
-function makeMeshMaterial(opts={}){
-  return new THREE.MeshStandardMaterial({
-    color:0xffffff,
-    roughness:0.9,
-    metalness:0.0,
-    ...opts
-  });
-}
-
 function applyLineStyle(obj, dashed=false){
   obj.traverse(child=>{
     if(child.isMesh){
-      // Convert mesh to wireframe/line-style
-      const edges=new THREE.EdgesGeometry(child.geometry,15);
+      const edges=new THREE.EdgesGeometry(child.geometry,10);
       const mat=dashed
         ? new THREE.LineDashedMaterial({color:0x000000,linewidth:1,dashSize:0.3,gapSize:0.2,scale:1})
         : new THREE.LineBasicMaterial({color:0x000000,linewidth:1});
       const line=new THREE.LineSegments(edges,mat);
       if(dashed)line.computeLineDistances();
-      line.matrix.copy(child.matrixWorld);
-      line.matrixAutoUpdate=false;
-      child.parent.add(line);
-      child.visible=false;
+      child.add(line);
+      child.material=new THREE.MeshBasicMaterial({visible:false});
     }
     if(child.isLine||child.isLineSegments){
       if(dashed){
@@ -637,12 +657,48 @@ function applyLineStyle(obj, dashed=false){
     }
   });
 }
+function applyStyledMesh(obj, styleOpts={}){
+  const {
+    fillColor=0xffffff,
+    fillOpacity=1,
+    fillTransparent=false,
+    lineColor=0x000000,
+    lineOpacity=1,
+    edgeAngle=15,        // crease angle for edges
+    depthWrite=true,
+    side=THREE.FrontSide,
+    renderOrder=0,
+  }=styleOpts;
 
-function applyWhiteBlackMesh(obj, opts={}){
   obj.traverse(child=>{
-    if(child.isMesh){
-      child.material=makeMeshMaterial(opts);
-    }
+    if(!child.isMesh)return;
+    // White fill mesh
+    child.material=new THREE.MeshStandardMaterial({
+      color:fillColor,
+      roughness:0.92,
+      metalness:0.0,
+      transparent:fillTransparent||fillOpacity<1,
+      opacity:fillOpacity,
+      depthWrite,
+      side,
+      polygonOffset:true,
+      polygonOffsetFactor:1,
+      polygonOffsetUnits:1,
+    });
+    child.renderOrder=renderOrder;
+
+    // Edge line overlay
+    const edges=new THREE.EdgesGeometry(child.geometry,edgeAngle);
+    const lineMat=new THREE.LineBasicMaterial({
+      color:lineColor,
+      transparent:lineOpacity<1,
+      opacity:lineOpacity,
+      depthWrite:false,
+    });
+    const lines=new THREE.LineSegments(edges,lineMat);
+    lines.renderOrder=renderOrder+1;
+    // Attach in world space relative to mesh
+    child.add(lines);
   });
 }
 
@@ -674,17 +730,37 @@ function loadNext(i){
     const grp=gltf.scene;
     grp.name=f.key;
 
+    // Layer 1 — Release Spaces: solid white fill, strong black edges
     if(f.key==='spaces'){
-      applyWhiteBlackMesh(grp,{side:THREE.FrontSide});
-    } else if(f.key==='compressed'){
-      applyWhiteBlackMesh(grp,{side:THREE.FrontSide});
-    } else if(f.key==='infra'){
-      applyWhiteBlackMesh(grp,{side:THREE.FrontSide});
-    } else if(f.key==='site'){
-      applyWhiteBlackMesh(grp,{transparent:true,opacity:siteOpacity,side:THREE.DoubleSide,depthWrite:false});
-    } else if(f.key==='lines'){
+      applyStyledMesh(grp,{fillColor:0xffffff,lineColor:0x000000,lineOpacity:1,edgeAngle:12,renderOrder:0});
+    }
+    // Layer 2 — Compressed Spaces: light grey fill, medium edges
+    else if(f.key==='compressed'){
+      applyStyledMesh(grp,{fillColor:0xf0f0f0,lineColor:0x000000,lineOpacity:0.7,edgeAngle:18,renderOrder:2});
+    }
+    // Layer 3 — Infrastructure: darker grey fill, finer edges
+    else if(f.key==='infra'){
+      applyStyledMesh(grp,{fillColor:0xe0e0e0,lineColor:0x000000,lineOpacity:0.5,edgeAngle:25,renderOrder:4});
+    }
+    // Layer 4 — Site: ghost/transparent, no edge lines
+    else if(f.key==='site'){
+      grp.traverse(c=>{
+        if(c.isMesh){
+          c.material=new THREE.MeshStandardMaterial({
+            color:0xffffff,roughness:1,metalness:0,
+            transparent:true,opacity:siteOpacity,
+            depthWrite:false,side:THREE.DoubleSide,
+          });
+          c.renderOrder=10;
+        }
+      });
+    }
+    // Layer 5 — Line drawings: pure edge lines, no fill
+    else if(f.key==='lines'){
       applyLineStyle(grp,false);
-    } else if(f.key==='dashed'){
+    }
+    // Layer 6 — Dashed lines: dashed edge lines, no fill
+    else if(f.key==='dashed'){
       applyLineStyle(grp,true);
     }
 
@@ -706,12 +782,8 @@ function loadNext(i){
 loadNext(0);
 
 function onAllLoaded(){
-  // Setup explode data for 'spaces' group
   setupExplodeData();
-  // Fit camera
   fitAll();
-  // Update occlusion
-  updateOcclusion();
 }
 
 function setupExplodeData(){
@@ -810,29 +882,6 @@ function updateSiteOpacity(){
       if(c.isMesh){c.material.opacity=v;c.material.transparent=true;}
     });
   }
-}
-
-// ─────────────────────────────────────────────
-// Occlusion (ambient occlusion via depthWrite)
-// ─────────────────────────────────────────────
-function updateOcclusion(){
-  const v=parseFloat(document.getElementById('occlusion').value);
-  document.getElementById('occlusion-val').textContent=v.toFixed(2);
-  occlusionStrength=v;
-  // Apply as a tint/shading to all non-site meshes
-  const col=new THREE.Color(occlusionStrength*0.18,occlusionStrength*0.18,occlusionStrength*0.18);
-  ['spaces','compressed','infra'].forEach(key=>{
-    if(groups[key]){
-      groups[key].traverse(c=>{
-        if(c.isMesh){
-          c.material.aoMapIntensity=occlusionStrength;
-          c.material.envMapIntensity=1-occlusionStrength*0.5;
-          // Subtle darkening at edges via roughness
-          c.material.roughness=0.85+occlusionStrength*0.15;
-        }
-      });
-    }
-  });
 }
 
 // ─────────────────────────────────────────────
@@ -953,11 +1002,14 @@ window.addEventListener('resize',()=>{
 // Animate
 // ─────────────────────────────────────────────
 let frameCount=0;
+let lastTime=performance.now();
 function animate(){
   requestAnimationFrame(animate);
-  controls.update();
+  const now=performance.now();
+  const dt=(now-lastTime)*0.001;
+  lastTime=now;
+  controls.update(dt);
   renderer.render(scene,camera);
-  // After first few frames, store original positions
   if(frameCount===5){storeOrigPos();}
   frameCount++;
 }
