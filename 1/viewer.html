@@ -669,7 +669,7 @@ function loadNext(i){
     return;
   }
   const f=files[i];
-  const path='/mnt/user-data/uploads/'+f.url;
+  const path=f.url;
   loader.load(path, gltf=>{
     const grp=gltf.scene;
     grp.name=f.key;
