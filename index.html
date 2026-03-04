@@ -402,16 +402,26 @@ const mat_infra_wire = new THREE.MeshBasicMaterial({
   transparent: true,
 });
 
-// GLB 4 — Drawings (sections/plans): pure white, unlit so lighting doesn't grey them out
-const mat_drawings = new THREE.MeshBasicMaterial({
-  color: 0xffffff,
+// GLB 4 — Drawings: same as frame material
+const mat_drawings = new THREE.MeshStandardMaterial({
+  color: 0xe8e8e8,
+  opacity: 0.55,
+  transparent: true,
+  roughness: 0.3,
+  metalness: 0.7,
   side: THREE.DoubleSide,
+  depthWrite: false,
 });
 
-// GLB 5 — Dashed Lines: pure white, unlit
-const mat_dashed = new THREE.MeshBasicMaterial({
-  color: 0xffffff,
+// GLB 5 — Dashed Lines: same as frame material
+const mat_dashed = new THREE.MeshStandardMaterial({
+  color: 0xe8e8e8,
+  opacity: 0.55,
+  transparent: true,
+  roughness: 0.3,
+  metalness: 0.7,
   side: THREE.DoubleSide,
+  depthWrite: false,
 });
 
 // GLB 6 — Frame: mid-grey, near-opaque, structural
