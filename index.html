@@ -330,7 +330,7 @@ controls.rotateSpeed = 0.6;
 controls.panSpeed = 0.5;
 controls.zoomSpeed = 0.8;
 controls.minDistance = 2;
-controls.maxDistance = 200;
+controls.maxDistance = 600;
 
 // ─── Lighting ─────────────────────────────────────────────────────────────────
 // Hard directional — Denari's drawing-instrument shadow logic
@@ -402,20 +402,16 @@ const mat_infra_wire = new THREE.MeshBasicMaterial({
   transparent: true,
 });
 
-// GLB 4 — Drawings (sections/plans): pure white lines on black
+// GLB 4 — Drawings (sections/plans): pure white, unlit so lighting doesn't grey them out
 const mat_drawings = new THREE.MeshBasicMaterial({
   color: 0xffffff,
   side: THREE.DoubleSide,
-  opacity: 1.0,
-  transparent: false,
 });
 
-// GLB 5 — Dashed Lines: bright white, line material
+// GLB 5 — Dashed Lines: pure white, unlit
 const mat_dashed = new THREE.MeshBasicMaterial({
   color: 0xffffff,
   side: THREE.DoubleSide,
-  opacity: 0.9,
-  transparent: true,
 });
 
 // GLB 6 — Frame: mid-grey, near-opaque, structural
