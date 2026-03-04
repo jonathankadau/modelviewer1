@@ -297,11 +297,7 @@
   <button class="view-btn" data-view="iso">ISO</button>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script>
-// ─── GLTFLoader (inlined r128 compatible) ────────────────────────────────────
-// Using the CDN version
-</script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 
@@ -508,11 +504,12 @@ glbFiles.forEach((file, idx) => {
       // per-file progress could update here
     },
     (err) => {
-      console.warn('Error loading', file.path, err);
+      console.error('Failed to load ' + file.path, err);
       onProgress({});
       if (loadedCount === totalFiles) onAllLoaded();
     }
   );
+  console.log('Loading:', file.path);
 });
 
 function onAllLoaded() {
