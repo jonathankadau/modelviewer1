@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARCHITECTURAL MASSING — DRAWING INSTRUMENT</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0a0a;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #fff;
+  }
+
+  #canvas-container {
+    width: 100vw;
+    height: 100vh;
+    position: relative;
+  }
+
+  canvas { display: block; }
+
+  /* HUD — Denari-style annotation layer */
+  #hud {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .hud-corner {
+    position: absolute;
+    font-size: 9px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    opacity: 0.6;
+    line-height: 1.8;
+  }
+
+  #hud-tl {
+    top: 28px; left: 28px;
+    border-left: 1px solid rgba(255,255,255,0.3);
+    padding-left: 12px;
+  }
+
+  #hud-tr {
+    top: 28px; right: 28px;
+    text-align: right;
+    border-right: 1px solid rgba(255,255,255,0.3);
+    padding-right: 12px;
+  }
+
+  #hud-bl {
+    bottom: 28px; left: 28px;
+    border-left: 1px solid rgba(255,255,255,0.3);
+    padding-left: 12px;
+  }
+
+  #hud-br {
+    bottom: 28px; right: 28px;
+    text-align: right;
+    border-right: 1px solid rgba(255,255,255,0.3);
+    padding-right: 12px;
+  }
+
+  /* Layer controls */
+  #controls {
+    position: fixed;
+    top: 50%;
+    right: 28px;
+    transform: translateY(-50%);
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .layer-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px 0;
+    pointer-events: all;
+    text-align: right;
+    flex-direction: row-reverse;
+    font-family: 'Courier New', monospace;
+  }
+
+  .layer-btn:hover .layer-label { opacity: 1; }
+
+  .layer-label {
+    font-size: 8px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #fff;
+    opacity: 0.35;
+    transition: opacity 0.2s;
+    white-space: nowrap;
+  }
+
+  .layer-toggle {
+    width: 28px;
+    height: 2px;
+    background: #fff;
+    opacity: 0.25;
+    transition: all 0.2s;
+    flex-shrink: 0;
+  }
+
+  .layer-btn.active .layer-toggle {
+    opacity: 1;
+  }
+  .layer-btn.active .layer-label {
+    opacity: 0.8;
+  }
+
+  /* Cross-hair reticle */
+  .crosshair {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    opacity: 0.08;
+  }
+  .crosshair::before, .crosshair::after {
+    content: '';
+    position: absolute;
+    background: #fff;
+  }
+  .crosshair::before {
+    width: 1px; height: 60px;
+    top: -30px; left: 0;
+  }
+  .crosshair::after {
+    width: 60px; height: 1px;
+    left: -30px; top: 0;
+  }
+
+  /* Scan line texture overlay */
+  #scanlines {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.03) 2px,
+      rgba(0,0,0,0.03) 4px
+    );
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  /* Loading screen */
+  #loading {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: #0a0a0a;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    transition: opacity 0.8s ease;
+  }
+
+  #loading-title {
+    font-size: 10px;
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    opacity: 0.5;
+  }
+
+  #loading-bar-wrap {
+    width: 200px;
+    height: 1px;
+    background: rgba(255,255,255,0.1);
+    position: relative;
+  }
+
+  #loading-bar {
+    height: 1px;
+    background: #fff;
+    width: 0%;
+    transition: width 0.3s ease;
+  }
+
+  #loading-pct {
+    font-size: 9px;
+    letter-spacing: 0.3em;
+    opacity: 0.3;
+  }
+
+  .view-btn {
+    background: none;
+    border: 1px solid rgba(255,255,255,0.2);
+    color: rgba(255,255,255,0.5);
+    font-family: 'Courier New', monospace;
+    font-size: 8px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    pointer-events: all;
+  }
+  .view-btn:hover, .view-btn.active {
+    border-color: rgba(255,255,255,0.8);
+    color: rgba(255,255,255,0.9);
+  }
+
+  #views {
+    position: fixed;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 4px;
+    z-index: 20;
+  }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div id="loading-title">Loading Drawing Instrument</div>
+  <div id="loading-bar-wrap"><div id="loading-bar"></div></div>
+  <div id="loading-pct">000%</div>
+</div>
+
+<div id="scanlines"></div>
+
+<div id="canvas-container"></div>
+
+<div id="hud">
+  <div class="hud-corner" id="hud-tl">
+    ARCHITECTURAL MASSING<br>
+    DRAWING INSTRUMENT v.01<br>
+    <span id="cam-pos">—</span>
+  </div>
+  <div class="hud-corner" id="hud-tr">
+    DENARI / CANTLEY / JONES<br>
+    B+W PROJECTION SYSTEM<br>
+    <span id="cam-angle">—</span>
+  </div>
+  <div class="hud-corner" id="hud-bl">
+    DRAG — ROTATE<br>
+    RIGHT DRAG — PAN<br>
+    SCROLL — ZOOM
+  </div>
+  <div class="hud-corner" id="hud-br">
+    <span id="fps-counter">—</span><br>
+    SECTIONS ACTIVE<br>
+    ALL LAYERS
+  </div>
+  <div class="crosshair"></div>
+</div>
+
+<div id="controls">
+  <button class="layer-btn active" data-layer="0">
+    <span class="layer-toggle"></span>
+    <span class="layer-label">Release Spaces</span>
+  </button>
+  <button class="layer-btn active" data-layer="1">
+    <span class="layer-toggle"></span>
+    <span class="layer-label">Compressed Spaces</span>
+  </button>
+  <button class="layer-btn active" data-layer="2">
+    <span class="layer-toggle"></span>
+    <span class="layer-label">Infrastructure</span>
+  </button>
+  <button class="layer-btn active" data-layer="3">
+    <span class="layer-toggle"></span>
+    <span class="layer-label">Drawings</span>
+  </button>
+  <button class="layer-btn active" data-layer="4">
+    <span class="layer-toggle"></span>
+    <span class="layer-label">Dashed Lines</span>
+  </button>
+  <button class="layer-btn active" data-layer="5">
+    <span class="layer-toggle"></span>
+    <span class="layer-label">Frame</span>
+  </button>
+</div>
+
+<div id="views">
+  <button class="view-btn active" data-view="persp">PERSP</button>
+  <button class="view-btn" data-view="top">PLAN</button>
+  <button class="view-btn" data-view="front">FRONT</button>
+  <button class="view-btn" data-view="side">SIDE</button>
+  <button class="view-btn" data-view="iso">ISO</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+<script>
+// ─── Scene Setup ─────────────────────────────────────────────────────────────
+const container = document.getElementById('canvas-container');
+const W = window.innerWidth, H = window.innerHeight;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+renderer.setSize(W, H);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0a);
+scene.fog = new THREE.FogExp2(0x0a0a0a, 0.008);
+
+const camera = new THREE.PerspectiveCamera(42, W / H, 0.1, 1000);
+camera.position.set(18, 12, 22);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.04;
+controls.rotateSpeed = 0.6;
+controls.panSpeed = 0.5;
+controls.zoomSpeed = 0.8;
+controls.minDistance = 2;
+controls.maxDistance = 600;
+
+// ─── Lighting ─────────────────────────────────────────────────────────────────
+// Hard directional — Denari's drawing-instrument shadow logic
+const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+sun.position.set(10, 20, 10);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 0.1;
+sun.shadow.camera.far = 200;
+sun.shadow.camera.left = -40;
+sun.shadow.camera.right = 40;
+sun.shadow.camera.top = 40;
+sun.shadow.camera.bottom = -40;
+sun.shadow.bias = -0.001;
+scene.add(sun);
+
+// Rim light from below — industrial / infrastructural
+const rim = new THREE.DirectionalLight(0xffffff, 0.3);
+rim.position.set(-8, -5, -12);
+scene.add(rim);
+
+// Ambient — very low, keeps shadows readable
+const ambient = new THREE.AmbientLight(0xffffff, 0.12);
+scene.add(ambient);
+
+// Fill — cool, slight
+const fill = new THREE.HemisphereLight(0xcccccc, 0x222222, 0.25);
+scene.add(fill);
+
+// ─── Material Definitions ────────────────────────────────────────────────────
+//
+// GLB 1 — Release Spaces: ghost white, very transparent, smooth
+const mat_release = new THREE.MeshPhysicalMaterial({
+  color: 0xffffff,
+  opacity: 0.18,
+  transparent: true,
+  roughness: 0.05,
+  metalness: 0.0,
+  side: THREE.DoubleSide,
+  depthWrite: false,
+});
+
+// GLB 2 — Compressed Spaces: solid white, matte, sculptural
+const mat_compressed = new THREE.MeshStandardMaterial({
+  color: 0xffffff,
+  opacity: 1.0,
+  transparent: false,
+  roughness: 0.9,
+  metalness: 0.0,
+  side: THREE.DoubleSide,
+});
+
+// GLB 3 — Infrastructure: dark charcoal, semi-transparent, industrial
+const mat_infra = new THREE.MeshStandardMaterial({
+  color: 0x1a1a1a,
+  opacity: 0.75,
+  transparent: true,
+  roughness: 0.6,
+  metalness: 0.4,
+  wireframe: false,
+  side: THREE.DoubleSide,
+});
+
+// Wireframe overlay for infrastructure
+const mat_infra_wire = new THREE.MeshBasicMaterial({
+  color: 0x555555,
+  wireframe: true,
+  opacity: 0.15,
+  transparent: true,
+});
+
+// GLB 4 — Drawings: LINE_STRIP geometry — needs LineBasicMaterial, not mesh material
+const mat_drawings = new THREE.LineBasicMaterial({
+  color: 0xffffff,
+});
+
+// GLB 5 — Dashed Lines: triangle mesh geometry, force white unlit
+const mat_dashed = new THREE.MeshBasicMaterial({
+  color: 0xffffff,
+  side: THREE.DoubleSide,
+});
+
+// GLB 6 — Frame: mid-grey, near-opaque, structural
+const mat_frame = new THREE.MeshStandardMaterial({
+  color: 0xe8e8e8,
+  opacity: 0.55,
+  transparent: true,
+  roughness: 0.3,
+  metalness: 0.7,
+  side: THREE.DoubleSide,
+  depthWrite: false,
+});
+
+// ─── Layer State ─────────────────────────────────────────────────────────────
+const layerGroups = [];
+const layerVisible = [true, true, true, true, true, true];
+
+// ─── GLB Loading ─────────────────────────────────────────────────────────────
+const loader = new THREE.GLTFLoader();
+const glbFiles = [
+  { path: '1 - release spaces.glb',    mat: mat_release,   extra: null,           name: 'release' },
+  { path: '2 - compressed spaces.glb', mat: mat_compressed,extra: null,           name: 'compressed' },
+  { path: '3 - infrastructure.glb',    mat: mat_infra,     extra: mat_infra_wire, name: 'infrastructure' },
+  { path: '4 - drawings.glb',          mat: mat_drawings,  extra: null,           name: 'drawings' },
+  { path: '5 - dashed lines.glb',      mat: mat_dashed,    extra: null,           name: 'dashed' },
+  { path: '6 - frames.glb',            mat: mat_frame,     extra: null,           name: 'frame' },
+];
+
+const loadBar = document.getElementById('loading-bar');
+const loadPct = document.getElementById('loading-pct');
+let loadedCount = 0;
+const totalFiles = glbFiles.length;
+let boundingBox = new THREE.Box3();
+let allLoaded = false;
+
+function onProgress(e) {
+  if (e.lengthComputable) { /* per-file fine-grained */ }
+  loadedCount++;
+  const pct = Math.round((loadedCount / totalFiles) * 100);
+  loadBar.style.width = pct + '%';
+  loadPct.textContent = String(pct).padStart(3, '0') + '%';
+}
+
+function applyMaterial(obj, mat, extra) {
+  const meshes = [];
+  const lines = [];
+  obj.traverse(child => {
+    if (child.isMesh) meshes.push(child);
+    else if (child.isLine) lines.push(child);
+  });
+  meshes.forEach(child => {
+    child.material = mat;
+    child.castShadow = true;
+    child.receiveShadow = true;
+    if (extra) {
+      const wireMesh = new THREE.Mesh(child.geometry, extra);
+      wireMesh.userData.isWireframe = true;
+      child.add(wireMesh);
+    }
+  });
+  // For line geometry (GLB 4), override with white LineBasicMaterial
+  lines.forEach(child => {
+    child.material = mat instanceof THREE.LineBasicMaterial
+      ? mat
+      : new THREE.LineBasicMaterial({ color: 0xffffff });
+  });
+}
+
+glbFiles.forEach((file, idx) => {
+  const group = new THREE.Group();
+  group.name = file.name;
+  group.visible = true;
+  layerGroups.push(group);
+  scene.add(group);
+
+  loader.load(
+    file.path,
+    (gltf) => {
+      const model = gltf.scene;
+      applyMaterial(model, file.mat, file.extra);
+      group.add(model);
+
+      // Accumulate bounding box
+      const bb = new THREE.Box3().setFromObject(group);
+      boundingBox.union(bb);
+
+      onProgress({});
+
+      if (loadedCount === totalFiles) {
+        onAllLoaded();
+      }
+    },
+    (xhr) => {
+      // per-file progress could update here
+    },
+    (err) => {
+      console.error('Failed to load ' + file.path, err);
+      onProgress({});
+      if (loadedCount === totalFiles) onAllLoaded();
+    }
+  );
+  console.log('Loading:', file.path);
+});
+
+function onAllLoaded() {
+  allLoaded = true;
+
+  // Center camera on the combined bounding box
+  const center = new THREE.Vector3();
+  const size = new THREE.Vector3();
+  boundingBox.getCenter(center);
+  boundingBox.getSize(size);
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const dist = maxDim * 1.6;
+
+  controls.target.copy(center);
+  camera.position.set(
+    center.x + dist * 0.7,
+    center.y + dist * 0.5,
+    center.z + dist * 0.8
+  );
+  controls.update();
+
+  // Store initial for view presets
+  storedCenter = center.clone();
+  storedDist = dist;
+
+  // Fade out loading screen
+  const loading = document.getElementById('loading');
+  loading.style.opacity = '0';
+  setTimeout(() => loading.style.display = 'none', 900);
+}
+
+let storedCenter = new THREE.Vector3();
+let storedDist = 20;
+
+// ─── View Presets ─────────────────────────────────────────────────────────────
+const viewPresets = {
+  persp: (c, d) => ({ pos: new THREE.Vector3(c.x + d*0.7, c.y + d*0.5, c.z + d*0.8), target: c.clone() }),
+  top:   (c, d) => ({ pos: new THREE.Vector3(c.x, c.y + d*1.5, c.z + 0.01), target: c.clone() }),
+  front: (c, d) => ({ pos: new THREE.Vector3(c.x, c.y, c.z + d*1.5), target: c.clone() }),
+  side:  (c, d) => ({ pos: new THREE.Vector3(c.x + d*1.5, c.y, c.z), target: c.clone() }),
+  iso:   (c, d) => ({ pos: new THREE.Vector3(c.x + d, c.y + d, c.z + d), target: c.clone() }),
+};
+
+document.querySelectorAll('.view-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    const key = btn.dataset.view;
+    if (!allLoaded) return;
+    const preset = viewPresets[key](storedCenter, storedDist);
+
+    // Animate camera
+    const startPos = camera.position.clone();
+    const startTarget = controls.target.clone();
+    const endPos = preset.pos;
+    const endTarget = preset.target;
+    let t = 0;
+    const dur = 60; // frames
+
+    function animateView() {
+      t++;
+      const k = 1 - Math.pow(1 - t / dur, 3);
+      camera.position.lerpVectors(startPos, endPos, k);
+      controls.target.lerpVectors(startTarget, endTarget, k);
+      controls.update();
+      if (t < dur) requestAnimationFrame(animateView);
+    }
+    animateView();
+  });
+});
+
+// ─── Layer Toggle ─────────────────────────────────────────────────────────────
+document.querySelectorAll('.layer-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const idx = parseInt(btn.dataset.layer);
+    layerVisible[idx] = !layerVisible[idx];
+    if (layerGroups[idx]) layerGroups[idx].visible = layerVisible[idx];
+    btn.classList.toggle('active', layerVisible[idx]);
+  });
+});
+
+// ─── HUD Update ──────────────────────────────────────────────────────────────
+const camPosEl = document.getElementById('cam-pos');
+const camAngleEl = document.getElementById('cam-angle');
+const fpsEl = document.getElementById('fps-counter');
+let lastTime = performance.now();
+let frameCount = 0;
+let fps = 0;
+
+function updateHUD() {
+  const p = camera.position;
+  camPosEl.textContent = `X${p.x.toFixed(1)} Y${p.y.toFixed(1)} Z${p.z.toFixed(1)}`;
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  const az = (Math.atan2(dir.x, dir.z) * 180 / Math.PI).toFixed(0);
+  const el = (Math.asin(dir.y) * 180 / Math.PI).toFixed(0);
+  camAngleEl.textContent = `AZ${az}° EL${el}°`;
+  fpsEl.textContent = `${fps} FPS`;
+}
+
+// ─── Render Loop ─────────────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+
+  // FPS
+  frameCount++;
+  const now = performance.now();
+  if (now - lastTime > 500) {
+    fps = Math.round(frameCount / ((now - lastTime) / 1000));
+    frameCount = 0;
+    lastTime = now;
+    updateHUD();
+  }
+
+  renderer.render(scene, camera);
+}
+animate();
+
+// ─── Resize ───────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  const w = window.innerWidth, h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+</script>
+</body>
+</html>
