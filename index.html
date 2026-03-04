@@ -224,6 +224,69 @@
     gap: 4px;
     z-index: 20;
   }
+
+  /* Explode sliders */
+  #explode-panel {
+    position: fixed;
+    bottom: 28px;
+    left: 28px;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .explode-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .explode-label {
+    font-family: 'Courier New', monospace;
+    font-size: 8px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.45);
+    white-space: nowrap;
+    width: 110px;
+  }
+
+  .explode-val {
+    font-family: 'Courier New', monospace;
+    font-size: 8px;
+    color: rgba(255,255,255,0.3);
+    width: 22px;
+    text-align: right;
+  }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 120px;
+    height: 1px;
+    background: rgba(255,255,255,0.15);
+    outline: none;
+    cursor: pointer;
+  }
+
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 8px;
+    height: 8px;
+    background: #fff;
+    border-radius: 0;
+    cursor: pointer;
+  }
+
+  input[type=range]::-moz-range-thumb {
+    width: 8px;
+    height: 8px;
+    background: #fff;
+    border-radius: 0;
+    border: none;
+    cursor: pointer;
+  }
 </style>
 </head>
 <body>
@@ -297,6 +360,19 @@
   <button class="view-btn" data-view="iso">ISO</button>
 </div>
 
+<div id="explode-panel">
+  <div class="explode-row">
+    <span class="explode-label">RELEASE ↑ UP</span>
+    <input type="range" id="slider-release" min="0" max="100" value="0" step="1">
+    <span class="explode-val" id="val-release">0</span>
+  </div>
+  <div class="explode-row">
+    <span class="explode-label">COMPRESSED ↓ DOWN</span>
+    <input type="range" id="slider-compressed" min="0" max="100" value="0" step="1">
+    <span class="explode-val" id="val-compressed">0</span>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -318,7 +394,7 @@ container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0a0a0a);
-scene.fog = new THREE.FogExp2(0x0a0a0a, 0.008);
+
 
 const camera = new THREE.PerspectiveCamera(42, W / H, 0.1, 1000);
 camera.position.set(18, 12, 22);
@@ -443,16 +519,7 @@ const loadBar = document.getElementById('loading-bar');
 const loadPct = document.getElementById('loading-pct');
 let loadedCount = 0;
 const totalFiles = glbFiles.length;
-let boundingBox = new THREE.Box3();
 let allLoaded = false;
-
-function onProgress(e) {
-  if (e.lengthComputable) { /* per-file fine-grained */ }
-  loadedCount++;
-  const pct = Math.round((loadedCount / totalFiles) * 100);
-  loadBar.style.width = pct + '%';
-  loadPct.textContent = String(pct).padStart(3, '0') + '%';
-}
 
 function applyMaterial(obj, mat, extra) {
   const meshes = [];
@@ -479,50 +546,70 @@ function applyMaterial(obj, mat, extra) {
   });
 }
 
+const loadedModels = [];
+
+// ─── Scene Root — rotates everything to align geometry with world axes ────────
+// Building is 27.881° off world Y axis in plan view
+const sceneRoot = new THREE.Group();
+sceneRoot.rotation.y = THREE.MathUtils.degToRad(27.881);
+scene.add(sceneRoot);
+
 glbFiles.forEach((file, idx) => {
   const group = new THREE.Group();
   group.name = file.name;
   group.visible = true;
   layerGroups.push(group);
-  scene.add(group);
+  sceneRoot.add(group); // add to sceneRoot, not scene directly
 
   loader.load(
     file.path,
     (gltf) => {
+      console.log('✓ Loaded:', file.path);
       const model = gltf.scene;
       applyMaterial(model, file.mat, file.extra);
       group.add(model);
+      loadedModels.push(group);
 
-      // Accumulate bounding box
-      const bb = new THREE.Box3().setFromObject(group);
-      boundingBox.union(bb);
-
-      onProgress({});
-
-      if (loadedCount === totalFiles) {
-        onAllLoaded();
-      }
+      // Register explode data after model is in scene
+      if (idx === 0) registerReleaseExplode(group);
+      if (idx === 1) registerCompressedExplode(group);
+      loadedCount++;
+      const pct = Math.round((loadedCount / totalFiles) * 100);
+      loadBar.style.width = pct + '%';
+      loadPct.textContent = String(pct).padStart(3, '0') + '%';
+      if (loadedCount === totalFiles) onAllLoaded();
     },
-    (xhr) => {
-      // per-file progress could update here
-    },
+    undefined,
     (err) => {
-      console.error('Failed to load ' + file.path, err);
-      onProgress({});
+      console.error('✗ Failed:', file.path, err);
+      loadedCount++;
+      const pct = Math.round((loadedCount / totalFiles) * 100);
+      loadBar.style.width = pct + '%';
+      loadPct.textContent = String(pct).padStart(3, '0') + '%';
       if (loadedCount === totalFiles) onAllLoaded();
     }
   );
-  console.log('Loading:', file.path);
 });
 
 function onAllLoaded() {
   allLoaded = true;
 
-  // Center camera on the combined bounding box
+  // Safely compute bounding box only from groups with real geometry
+  const bb = new THREE.Box3();
+  loadedModels.forEach(group => {
+    const groupBB = new THREE.Box3().setFromObject(group);
+    if (!groupBB.isEmpty()) bb.union(groupBB);
+  });
+
+  // Fallback if bounding box is still empty
+  if (bb.isEmpty()) {
+    bb.set(new THREE.Vector3(-10,-10,-10), new THREE.Vector3(10,10,10));
+  }
+
   const center = new THREE.Vector3();
   const size = new THREE.Vector3();
-  boundingBox.getCenter(center);
-  boundingBox.getSize(size);
+  bb.getCenter(center);
+  bb.getSize(size);
   const maxDim = Math.max(size.x, size.y, size.z);
   const dist = maxDim * 1.6;
 
@@ -534,11 +621,105 @@ function onAllLoaded() {
   );
   controls.update();
 
-  // Store initial for view presets
   storedCenter = center.clone();
   storedDist = dist;
 
-  // Fade out loading screen
+  // Position cloud around the massing (GLBs 1-3)
+
+
+  // ─── PNG Image Planes ────────────────────────────────────────────────────────
+  // Exact vertex positions extracted from picturelocations.glb
+  // Black background treated as transparent via custom shader
+
+  const textureLoader = new THREE.TextureLoader();
+
+  function makePlaneFromVerts(v0, v1, v2, v3) {
+    // Build custom geometry from 4 exact corner verts
+    // v0=topLeft, v1=bottomLeft, v2=topRight, v3=bottomRight
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array([
+      v0.x, v0.y, v0.z,
+      v1.x, v1.y, v1.z,
+      v2.x, v2.y, v2.z,
+      v3.x, v3.y, v3.z,
+    ]);
+    const uvs = new Float32Array([
+      0, 1,
+      0, 0,
+      1, 1,
+      1, 0,
+    ]);
+    const indices = new Uint16Array([0, 1, 2, 1, 3, 2]);
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geo.setIndex(new THREE.BufferAttribute(indices, 1));
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  // Shader material that treats black as transparent
+  function makeDrawingMaterial(texture) {
+    return new THREE.ShaderMaterial({
+      uniforms: { map: { value: texture }, opacity: { value: 0.92 } },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
+      `,
+      fragmentShader: `
+        uniform sampler2D map;
+        uniform float opacity;
+        varying vec2 vUv;
+        void main() {
+          vec4 c = texture2D(map, vUv);
+          // Luminance of pixel — black becomes transparent
+          float lum = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+          gl_FragColor = vec4(c.rgb, lum * opacity);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+  }
+
+  // Node 0 (unnamed) → section2-01.png — angled plane
+  // Verts: [0] top-left, [1] bottom-left, [2] top-right, [3] bottom-right
+  textureLoader.load('section2-01.png', tex => {
+    const geo = makePlaneFromVerts(
+      new THREE.Vector3(481.176, 88.863,  1555.137),  // top-left
+      new THREE.Vector3(481.176, -35.643, 1555.137),  // bottom-left
+      new THREE.Vector3(647.250, 88.863,  1642.997),  // top-right
+      new THREE.Vector3(647.250, -35.643, 1642.997),  // bottom-right
+    );
+    const mesh = new THREE.Mesh(geo, makeDrawingMaterial(tex));
+    sceneRoot.add(mesh);
+  });
+
+  // Node 1 → section1-01.png — larger angled vertical plane (3x3 grid of verts)
+  // Use corners: [0]=bottom-right, [2]=top-right, [6]=bottom-left, [8]=top-left
+  textureLoader.load('section1-01.png', tex => {
+    const geo = makePlaneFromVerts(
+      new THREE.Vector3(538.705, 98.368,  1391.823),  // top-right
+      new THREE.Vector3(538.705, -32.080, 1391.823),  // bottom-right
+      new THREE.Vector3(446.652, 98.368,  1565.824),  // top-left
+      new THREE.Vector3(446.652, -32.080, 1565.824),  // bottom-left
+    );
+    const mesh = new THREE.Mesh(geo, makeDrawingMaterial(tex));
+    sceneRoot.add(mesh);
+  });
+
+  // Node 2 → plan1-01.png — horizontal plan, Y=99.322 throughout
+  textureLoader.load('plan1-01.png', tex => {
+    const geo = makePlaneFromVerts(
+      new THREE.Vector3(517.111, 99.322, 1532.247),  // v0
+      new THREE.Vector3(567.299, 99.322, 1437.381),  // v1
+      new THREE.Vector3(659.825, 99.322, 1607.749),  // v2
+      new THREE.Vector3(710.013, 99.322, 1512.883),  // v3
+    );
+    const mesh = new THREE.Mesh(geo, makeDrawingMaterial(tex));
+    sceneRoot.add(mesh);
+  });
+
   const loading = document.getElementById('loading');
   loading.style.opacity = '0';
   setTimeout(() => loading.style.display = 'none', 900);
@@ -614,10 +795,94 @@ function updateHUD() {
   fpsEl.textContent = `${fps} FPS`;
 }
 
+// ─── Explode System ───────────────────────────────────────────────────────────
+// Release spaces  — individual pieces fly UP  (sorted bottom→top, each gets higher rank)
+// Compressed spaces — individual pieces fly DOWN (sorted top→bottom, each gets lower rank)
+
+const explodeData = {
+  release:    [],
+  compressed: [],
+};
+
+const EXPLODE_SPACING_RELEASE    = 3;
+const EXPLODE_SPACING_COMPRESSED = 3;
+
+function registerReleaseExplode(group) {
+  setTimeout(() => {
+    const pieces = [];
+    group.traverse(child => {
+      if (!child.isMesh || child.userData.isWireframe) return;
+      const wp = new THREE.Vector3();
+      child.getWorldPosition(wp);
+      pieces.push({ mesh: child, originY: wp.y });
+    });
+    // Sort bottom to top — bottom piece (rank 0) stays, top piece moves most
+    pieces.sort((a, b) => a.originY - b.originY);
+    pieces.forEach((p, i) => {
+      explodeData.release.push({ mesh: p.mesh, originY: p.originY, rank: i });
+    });
+  }, 200);
+}
+
+function registerCompressedExplode(group) {
+  setTimeout(() => {
+    const pieces = [];
+    group.traverse(child => {
+      if (!child.isMesh || child.userData.isWireframe) return;
+      const wp = new THREE.Vector3();
+      child.getWorldPosition(wp);
+      pieces.push({ mesh: child, originY: wp.y });
+    });
+    // Sort top to bottom — top piece (rank 0) stays, bottom piece drops most
+    pieces.sort((a, b) => b.originY - a.originY);
+    pieces.forEach((p, i) => {
+      explodeData.compressed.push({ mesh: p.mesh, originY: p.originY, rank: i });
+    });
+  }, 200);
+}
+
+let targetExplodeRelease    = 0;
+let targetExplodeCompressed = 0;
+let currentExplodeRelease    = 0;
+let currentExplodeCompressed = 0;
+
+function applyExplode() {
+  currentExplodeRelease    += (targetExplodeRelease    - currentExplodeRelease)    * 0.05;
+  currentExplodeCompressed += (targetExplodeCompressed - currentExplodeCompressed) * 0.05;
+
+  const tR = currentExplodeRelease    / 100;
+  const tC = currentExplodeCompressed / 100;
+
+  explodeData.release.forEach(d => {
+    d.mesh.position.y = d.originY + d.rank * EXPLODE_SPACING_RELEASE * tR;
+  });
+
+  explodeData.compressed.forEach(d => {
+    d.mesh.position.y = d.originY - d.rank * EXPLODE_SPACING_COMPRESSED * tC;
+  });
+}
+
+// Wire up sliders
+const sliderRelease    = document.getElementById('slider-release');
+const sliderCompressed = document.getElementById('slider-compressed');
+const valRelease       = document.getElementById('val-release');
+const valCompressed    = document.getElementById('val-compressed');
+
+sliderRelease.addEventListener('input', () => {
+  targetExplodeRelease = parseFloat(sliderRelease.value);
+  valRelease.textContent = sliderRelease.value;
+});
+
+sliderCompressed.addEventListener('input', () => {
+  targetExplodeCompressed = parseFloat(sliderCompressed.value);
+  valCompressed.textContent = sliderCompressed.value;
+});
+
 // ─── Render Loop ─────────────────────────────────────────────────────────────
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
+  applyExplode();
 
   // FPS
   frameCount++;
