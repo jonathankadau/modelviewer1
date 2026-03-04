@@ -369,8 +369,6 @@ const mat_release = new THREE.MeshPhysicalMaterial({
   transparent: true,
   roughness: 0.05,
   metalness: 0.0,
-  transmission: 0.7,
-  thickness: 0.5,
   side: THREE.DoubleSide,
   depthWrite: false,
 });
@@ -462,16 +460,19 @@ function onProgress(e) {
 }
 
 function applyMaterial(obj, mat, extra) {
+  // Collect meshes first to avoid traverse recursion when adding children
+  const meshes = [];
   obj.traverse(child => {
-    if (child.isMesh) {
-      child.material = mat;
-      child.castShadow = true;
-      child.receiveShadow = true;
-
-      if (extra) {
-        const wireMesh = new THREE.Mesh(child.geometry, extra);
-        child.add(wireMesh);
-      }
+    if (child.isMesh) meshes.push(child);
+  });
+  meshes.forEach(child => {
+    child.material = mat;
+    child.castShadow = true;
+    child.receiveShadow = true;
+    if (extra) {
+      const wireMesh = new THREE.Mesh(child.geometry, extra);
+      wireMesh.userData.isWireframe = true;
+      child.add(wireMesh);
     }
   });
 }
