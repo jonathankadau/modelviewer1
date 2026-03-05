@@ -60,6 +60,54 @@
   input[type=range] { -webkit-appearance: none; appearance: none; width: 120px; height: 1px; background: rgba(255,255,255,0.15); outline: none; cursor: pointer; }
   input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 8px; height: 8px; background: #fff; border-radius: 0; cursor: pointer; }
   input[type=range]::-moz-range-thumb { width: 8px; height: 8px; background: #fff; border-radius: 0; border: none; cursor: pointer; }
+
+  /* ── Clipping plane panel ────────────────────────── */
+  #clip-panel {
+    position: fixed; left: 28px;
+    bottom: calc(50% + 40px);
+    z-index: 20;
+    display: flex; flex-direction: column; gap: 18px;
+    align-items: flex-start;
+  }
+  .clip-group { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+  .clip-title {
+    font-size: 8px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: rgba(255,255,255,0.4); white-space: nowrap;
+    border-left: 1px solid rgba(255,255,255,0.2); padding-left: 10px;
+  }
+  .clip-title.active { color: rgba(255,255,255,0.9); border-left-color: rgba(255,255,255,0.7); }
+  .clip-slider-row { display: flex; align-items: center; gap: 8px; }
+  .clip-axis {
+    font-size: 7px; letter-spacing: 0.2em; color: rgba(255,255,255,0.25);
+    width: 14px; text-align: right;
+  }
+  /* vertical slider — rotated */
+  .clip-slider-wrap {
+    width: 12px; height: 120px;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  .clip-slider-wrap input[type=range] {
+    width: 120px; height: 1px;
+    transform: rotate(-90deg);
+    transform-origin: center center;
+    position: absolute;
+    background: rgba(255,255,255,0.12);
+  }
+  .clip-val {
+    font-size: 7px; letter-spacing: 0.15em; color: rgba(255,255,255,0.22);
+    width: 28px; text-align: right;
+  }
+  .clip-indicator {
+    width: 1px; height: 120px;
+    background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.15) 50%, transparent);
+    position: relative; margin-right: 4px;
+  }
+  .clip-indicator-pip {
+    position: absolute; left: -3px; width: 7px; height: 1px;
+    background: rgba(255,255,255,0.7);
+    transition: top 0.05s linear;
+  }
 </style>
 </head>
 <body>
@@ -111,6 +159,35 @@
   <button class="layer-btn active" data-layer="5"><span class="layer-toggle"></span><span class="layer-label">Frame</span></button>
 </div>
 
+<!-- ── Clipping plane controls ──────────────────────── -->
+<div id="clip-panel">
+
+  <!-- FRONT ELEVATION — clips along Z (normal points -Z, plane moves from back to front) -->
+  <div class="clip-group" id="clip-group-z">
+    <div class="clip-title" id="clip-title-z">FRONT ELEV — SECTION</div>
+    <div class="clip-slider-row">
+      <div class="clip-indicator"><div class="clip-indicator-pip" id="clip-pip-z"></div></div>
+      <div class="clip-slider-wrap">
+        <input type="range" id="clip-z" min="0" max="100" value="100" step="0.5">
+      </div>
+      <div class="clip-val" id="clip-val-z">—</div>
+    </div>
+  </div>
+
+  <!-- SIDE ELEVATION — clips along X (normal points -X, plane moves right to left) -->
+  <div class="clip-group" id="clip-group-x">
+    <div class="clip-title" id="clip-title-x">SIDE ELEV — SECTION</div>
+    <div class="clip-slider-row">
+      <div class="clip-indicator"><div class="clip-indicator-pip" id="clip-pip-x"></div></div>
+      <div class="clip-slider-wrap">
+        <input type="range" id="clip-x" min="0" max="100" value="100" step="0.5">
+      </div>
+      <div class="clip-val" id="clip-val-x">—</div>
+    </div>
+  </div>
+
+</div>
+
 <div id="views">
   <button class="view-btn active" data-view="persp">PERSP</button>
   <button class="view-btn" data-view="top">PLAN</button>
@@ -148,6 +225,8 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.2;
+// Enable clipping planes on the renderer
+renderer.localClippingEnabled = true;
 container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -186,26 +265,68 @@ scene.add(ambient);
 const fill = new THREE.HemisphereLight(0xcccccc, 0x222222, 0.25);
 scene.add(fill);
 
+// ─── Clipping planes (world space) ────────────────────────────────────────────
+// We operate in the SCENE-ROOT's world space, which is rotated ~27.9°.
+// The planes are defined in world space so they act as true section cuts.
+// Front elevation: normal -Z  → plane constant starts at +Infinity (no clip)
+// Side elevation:  normal -X  → plane constant starts at +Infinity (no clip)
+const clipPlaneZ = new THREE.Plane(new THREE.Vector3(0, 0, -1),  1e9); // front/back
+const clipPlaneX = new THREE.Plane(new THREE.Vector3(1, 0, 0),  1e9); // left/right (clips from other side)
+
+// We track the bounding box once all models load so we can map 0–100 to a real range
+let modelBB = null;
+
+function updateClipPlaneZ(t01) {
+  // t01 = 1 → no clip (plane far in +Z direction → constant = bb.max.z)
+  // t01 = 0 → fully clipped (plane at bb.min.z → nothing visible)
+  if (!modelBB) return;
+  const zMin = modelBB.min.z;
+  const zMax = modelBB.max.z;
+  // plane: dot(n, x) + d >= 0 to keep, n = (0,0,-1)
+  // keep point p when  -p.z + d >= 0  →  d >= p.z
+  // constant = zMax*t + zMin*(1-t) makes the cut sweep from min→max as t goes 0→1
+  const cutZ = zMin + (zMax - zMin) * t01;
+  clipPlaneZ.constant = cutZ; // -p.z + cutZ >= 0  →  only p.z <= cutZ visible
+  document.getElementById('clip-val-z').textContent = cutZ.toFixed(0);
+  document.getElementById('clip-pip-z').style.top = ((1 - t01) * 110) + 'px';
+  document.getElementById('clip-title-z').classList.toggle('active', t01 < 0.99);
+}
+
+function updateClipPlaneX(t01) {
+  if (!modelBB) return;
+  const xMin = modelBB.min.x;
+  const xMax = modelBB.max.x;
+  // normal = +X: keep point p when p.x + d >= 0 → d >= -p.x
+  // constant = -(xMax - (xMax-xMin)*t01) sweeps from xMax down to xMin as t01 goes 0→1
+  const cutX = xMax - (xMax - xMin) * t01;
+  clipPlaneX.constant = -cutX;
+  document.getElementById('clip-val-x').textContent = cutX.toFixed(0);
+  document.getElementById('clip-pip-x').style.top = ((1 - t01) * 110) + 'px';
+  document.getElementById('clip-title-x').classList.toggle('active', t01 < 0.99);
+}
+
 // Materials
 const mat_release = new THREE.MeshPhysicalMaterial({
   color: 0xffffff, opacity: 0.18, transparent: true,
   roughness: 0.05, metalness: 0.0, side: THREE.DoubleSide, depthWrite: false,
+  clippingPlanes: [clipPlaneZ, clipPlaneX],
 });
 
 const mat_compressed = new THREE.MeshStandardMaterial({
   color: 0xffffff, opacity: 1.0, transparent: false,
   roughness: 0.9, metalness: 0.0, side: THREE.DoubleSide,
+  clippingPlanes: [clipPlaneZ, clipPlaneX],
 });
 
 // ─── Dither Shader ────────────────────────────────────────────────────────────
-// 4x4 Bayer ordered dither. Pure float arithmetic — no arrays, no dynamic
-// indexing, fully GLSL ES 1.0 compatible. Gives a flat 1-bit pixelated look.
 const mat_dither = new THREE.ShaderMaterial({
   uniforms: {
     uTime:     { value: 0.0 },
     uLightDir: { value: new THREE.Vector3(0.5, 1.0, 0.5).normalize() },
     uPixelSize:{ value: 3.0 },
   },
+  clipping: true,
+  clippingPlanes: [clipPlaneZ, clipPlaneX],
   vertexShader: `
     precision mediump float;
     varying vec3 vNormal;
@@ -242,14 +363,12 @@ const mat_dither = new THREE.ShaderMaterial({
       return v / 16.0;
     }
 
-    // Cycle through 4 vivid colors over time — each face lights in a different hue
     vec3 palette(float t) {
-      // 4-stop palette: cyan, red, yellow, violet — snapped in quarters
       float s = mod(t, 4.0);
-      vec3 c0 = vec3(0.04, 0.78, 1.00); // UESC cyan
-      vec3 c1 = vec3(1.00, 0.24, 0.24); // runner red
-      vec3 c2 = vec3(1.00, 0.86, 0.00); // faction yellow
-      vec3 c3 = vec3(0.70, 0.24, 1.00); // deep violet
+      vec3 c0 = vec3(0.04, 0.78, 1.00);
+      vec3 c1 = vec3(1.00, 0.24, 0.24);
+      vec3 c2 = vec3(1.00, 0.86, 0.00);
+      vec3 c3 = vec3(0.70, 0.24, 1.00);
       if (s < 1.0) return mix(c0, c1, s);
       if (s < 2.0) return mix(c1, c2, s - 1.0);
       if (s < 3.0) return mix(c2, c3, s - 2.0);
@@ -270,7 +389,6 @@ const mat_dither = new THREE.ShaderMaterial({
       float thresh = bayer4(x, y);
       float d = step(thresh, brightness);
 
-      // Slow color cycle — shifts every ~4s, different per pixel cluster for variety
       float colorPhase = uTime * 0.18 + px.x * 0.004 + px.y * 0.003;
       vec3 onColor = palette(colorPhase);
       vec3 offColor = vec3(0.02, 0.02, 0.03);
@@ -285,15 +403,24 @@ const mat_dither = new THREE.ShaderMaterial({
 const mat_infra = new THREE.MeshStandardMaterial({
   color: 0x1a1a1a, opacity: 0.75, transparent: true,
   roughness: 0.6, metalness: 0.4, wireframe: false, side: THREE.DoubleSide,
+  clippingPlanes: [clipPlaneZ, clipPlaneX],
 });
 const mat_infra_wire = new THREE.MeshBasicMaterial({
   color: 0x555555, wireframe: true, opacity: 0.15, transparent: true,
+  clippingPlanes: [clipPlaneZ, clipPlaneX],
 });
-const mat_drawings = new THREE.LineBasicMaterial({ color: 0xffffff });
-const mat_dashed = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+const mat_drawings = new THREE.LineBasicMaterial({
+  color: 0xffffff,
+  clippingPlanes: [clipPlaneZ, clipPlaneX],
+});
+const mat_dashed = new THREE.MeshBasicMaterial({
+  color: 0xffffff, side: THREE.DoubleSide,
+  clippingPlanes: [clipPlaneZ, clipPlaneX],
+});
 const mat_frame = new THREE.MeshStandardMaterial({
   color: 0xe8e8e8, opacity: 0.55, transparent: true,
   roughness: 0.3, metalness: 0.7, side: THREE.DoubleSide, depthWrite: false,
+  clippingPlanes: [clipPlaneZ, clipPlaneX],
 });
 
 // Layer state
@@ -337,7 +464,7 @@ function applyMaterial(obj, mat, extra) {
   });
   lines.forEach(child => {
     child.material = mat instanceof THREE.LineBasicMaterial
-      ? mat : new THREE.LineBasicMaterial({ color: 0xffffff });
+      ? mat : new THREE.LineBasicMaterial({ color: 0xffffff, clippingPlanes: [clipPlaneZ, clipPlaneX] });
   });
 }
 
@@ -389,6 +516,16 @@ function onAllLoaded() {
   });
   if (bb.isEmpty()) bb.set(new THREE.Vector3(-10,-10,-10), new THREE.Vector3(10,10,10));
 
+  // Store the world-space bounding box for clipping plane mapping
+  // The sceneRoot is rotated, so we need the world-space BB of the entire root
+  const worldBB = new THREE.Box3().setFromObject(sceneRoot);
+  modelBB = worldBB;
+
+  // Initialise clipping planes to "no clip" (beyond far edge of model)
+  // We start at t01 = 1.0 (sliders at max = 100)
+  updateClipPlaneZ(1.0);
+  updateClipPlaneX(1.0);
+
   const center = new THREE.Vector3(), size = new THREE.Vector3();
   bb.getCenter(center);
   bb.getSize(size);
@@ -418,6 +555,8 @@ function onAllLoaded() {
       vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
       fragmentShader: `uniform sampler2D map; uniform float opacity; varying vec2 vUv; void main() { vec4 c = texture2D(map, vUv); float lum = dot(c.rgb, vec3(0.299, 0.587, 0.114)); gl_FragColor = vec4(c.rgb, lum * opacity); }`,
       transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      clipping: true,
+      clippingPlanes: [clipPlaneZ, clipPlaneX],
     });
   }
 
@@ -485,6 +624,14 @@ document.querySelectorAll('.layer-btn').forEach(btn => {
   });
 });
 
+// ─── Clipping plane slider listeners ──────────────────────────────────────────
+document.getElementById('clip-z').addEventListener('input', e => {
+  updateClipPlaneZ(parseFloat(e.target.value) / 100);
+});
+document.getElementById('clip-x').addEventListener('input', e => {
+  updateClipPlaneX(parseFloat(e.target.value) / 100);
+});
+
 // HUD
 const camPosEl = document.getElementById('cam-pos');
 const camAngleEl = document.getElementById('cam-angle');
@@ -546,7 +693,7 @@ document.getElementById('slider-compressed').addEventListener('input', e => {
   document.getElementById('val-compressed').textContent = e.target.value;
 });
 
-// Canvas overlays (marathon system — kept intact)
+// Canvas overlays
 const pixelCanvas = document.getElementById('pixel-overlay');
 const pixelCtx = pixelCanvas.getContext('2d');
 pixelCanvas.width = window.innerWidth;
@@ -559,16 +706,12 @@ mCanvas.height = window.innerHeight;
 let techEnabled = false;
 let compressedIntensity = 0, releaseIntensity = 0;
 
-// ─── Tech Toggle ──────────────────────────────────────────────────────────────
-// ON  → swap compressed to dither shader + activate canvas overlays
-// OFF → restore original mat + clear canvases
 const techTrack = document.getElementById('tech-track');
 techTrack.addEventListener('click', () => {
   techEnabled = !techEnabled;
   techTrack.classList.toggle('on', techEnabled);
   pixelCanvas.classList.toggle('active', techEnabled);
 
-  // Swap compressed spaces material
   compressedMeshes.forEach(mesh => {
     mesh.material = techEnabled ? mat_dither : mat_compressed;
   });
@@ -583,7 +726,7 @@ techTrack.addEventListener('click', () => {
   }
 });
 
-// Canvas effect systems (marathon — release spaces crosses only now)
+// Canvas effect systems
 const compressedBars = [];
 const MAX_BARS = 28;
 const MARATHON_COLORS = [
@@ -664,7 +807,6 @@ function drawBreath() {
   mCtx.globalAlpha = 1.0;
 }
 
-// Raycaster for release crosses
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 let mouseScreen = { x: 0, y: 0 };
@@ -683,10 +825,8 @@ function animate() {
   controls.update();
   applyExplode();
 
-  // Advance dither time
   if (techEnabled) mat_dither.uniforms.uTime.value += 0.016;
 
-  // Release canvas crosses (hover on release spaces)
   if (techEnabled && allLoaded && releaseMeshes.length > 0) {
     raycaster.setFromCamera(mouse, camera);
     const hitsR = raycaster.intersectObjects(releaseMeshes, false);
@@ -703,7 +843,6 @@ function animate() {
   if (techEnabled) {
     if (releaseIntensity > 0.01) spawnBreath(mouseScreen.x, mouseScreen.y);
     updateBreath(); drawBreath();
-    // Clear pixel canvas (no compressed bars any more — dither handles it)
     pixelCtx.clearRect(0, 0, pixelCanvas.width, pixelCanvas.height);
   } else {
     pixelCtx.clearRect(0, 0, pixelCanvas.width, pixelCanvas.height);
