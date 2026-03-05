@@ -6,287 +6,60 @@
 <title>ARCHITECTURAL MASSING — DRAWING INSTRUMENT</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-
-  body {
-    background: #0a0a0a;
-    overflow: hidden;
-    font-family: 'Courier New', monospace;
-    color: #fff;
-  }
-
-  #canvas-container {
-    width: 100vw;
-    height: 100vh;
-    position: relative;
-  }
-
+  body { background: #0a0a0a; overflow: hidden; font-family: 'Courier New', monospace; color: #fff; }
+  #canvas-container { width: 100vw; height: 100vh; position: relative; }
   canvas { display: block; }
-
-  /* HUD — Denari-style annotation layer */
-  #hud {
-    position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    pointer-events: none;
-    z-index: 10;
+  #pixel-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 8; opacity: 0; transition: opacity 0.4s ease;
   }
-
-  .hud-corner {
-    position: absolute;
-    font-size: 9px;
-    letter-spacing: 0.25em;
-    text-transform: uppercase;
-    opacity: 0.6;
-    line-height: 1.8;
+  #pixel-overlay.active { opacity: 1; }
+  #marathon-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 9;
   }
-
-  #hud-tl {
-    top: 28px; left: 28px;
-    border-left: 1px solid rgba(255,255,255,0.3);
-    padding-left: 12px;
+  #tech-toggle {
+    position: fixed; top: 50%; left: 28px; transform: translateY(-50%);
+    z-index: 20; display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
   }
-
-  #hud-tr {
-    top: 28px; right: 28px;
-    text-align: right;
-    border-right: 1px solid rgba(255,255,255,0.3);
-    padding-right: 12px;
-  }
-
-  #hud-bl {
-    bottom: 28px; left: 28px;
-    border-left: 1px solid rgba(255,255,255,0.3);
-    padding-left: 12px;
-  }
-
-  #hud-br {
-    bottom: 28px; right: 28px;
-    text-align: right;
-    border-right: 1px solid rgba(255,255,255,0.3);
-    padding-right: 12px;
-  }
-
-  /* Layer controls */
-  #controls {
-    position: fixed;
-    top: 50%;
-    right: 28px;
-    transform: translateY(-50%);
-    z-index: 20;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .layer-btn {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 6px 0;
-    pointer-events: all;
-    text-align: right;
-    flex-direction: row-reverse;
-    font-family: 'Courier New', monospace;
-  }
-
+  .tech-toggle-label { font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(255,255,255,0.35); white-space: nowrap; }
+  .toggle-track { width: 28px; height: 2px; background: rgba(255,255,255,0.2); position: relative; cursor: pointer; transition: background 0.3s; }
+  .toggle-track.on { background: rgba(255,255,255,0.8); }
+  .toggle-thumb { position: absolute; top: -3px; left: 0; width: 8px; height: 8px; background: rgba(255,255,255,0.4); transition: left 0.2s ease, background 0.2s; }
+  .toggle-track.on .toggle-thumb { left: 20px; background: #fff; }
+  #hud { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+  .hud-corner { position: absolute; font-size: 9px; letter-spacing: 0.25em; text-transform: uppercase; opacity: 0.6; line-height: 1.8; }
+  #hud-tl { top: 28px; left: 28px; border-left: 1px solid rgba(255,255,255,0.3); padding-left: 12px; }
+  #hud-tr { top: 28px; right: 28px; text-align: right; border-right: 1px solid rgba(255,255,255,0.3); padding-right: 12px; }
+  #hud-bl { bottom: 28px; left: 28px; border-left: 1px solid rgba(255,255,255,0.3); padding-left: 12px; }
+  #hud-br { bottom: 28px; right: 28px; text-align: right; border-right: 1px solid rgba(255,255,255,0.3); padding-right: 12px; }
+  #controls { position: fixed; top: 50%; right: 28px; transform: translateY(-50%); z-index: 20; display: flex; flex-direction: column; gap: 2px; }
+  .layer-btn { display: flex; align-items: center; gap: 10px; background: none; border: none; cursor: pointer; padding: 6px 0; pointer-events: all; text-align: right; flex-direction: row-reverse; font-family: 'Courier New', monospace; }
   .layer-btn:hover .layer-label { opacity: 1; }
-
-  .layer-label {
-    font-size: 8px;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: #fff;
-    opacity: 0.35;
-    transition: opacity 0.2s;
-    white-space: nowrap;
-  }
-
-  .layer-toggle {
-    width: 28px;
-    height: 2px;
-    background: #fff;
-    opacity: 0.25;
-    transition: all 0.2s;
-    flex-shrink: 0;
-  }
-
-  .layer-btn.active .layer-toggle {
-    opacity: 1;
-  }
-  .layer-btn.active .layer-label {
-    opacity: 0.8;
-  }
-
-  /* Cross-hair reticle */
-  .crosshair {
-    position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    opacity: 0.08;
-  }
-  .crosshair::before, .crosshair::after {
-    content: '';
-    position: absolute;
-    background: #fff;
-  }
-  .crosshair::before {
-    width: 1px; height: 60px;
-    top: -30px; left: 0;
-  }
-  .crosshair::after {
-    width: 60px; height: 1px;
-    left: -30px; top: 0;
-  }
-
-  /* Scan line texture overlay */
-  #scanlines {
-    position: fixed;
-    top: 0; left: 0; width: 100%; height: 100%;
-    background: repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      rgba(0,0,0,0.03) 2px,
-      rgba(0,0,0,0.03) 4px
-    );
-    pointer-events: none;
-    z-index: 5;
-  }
-
-  /* Loading screen */
-  #loading {
-    position: fixed;
-    top: 0; left: 0; width: 100%; height: 100%;
-    background: #0a0a0a;
-    z-index: 100;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 24px;
-    transition: opacity 0.8s ease;
-  }
-
-  #loading-title {
-    font-size: 10px;
-    letter-spacing: 0.4em;
-    text-transform: uppercase;
-    opacity: 0.5;
-  }
-
-  #loading-bar-wrap {
-    width: 200px;
-    height: 1px;
-    background: rgba(255,255,255,0.1);
-    position: relative;
-  }
-
-  #loading-bar {
-    height: 1px;
-    background: #fff;
-    width: 0%;
-    transition: width 0.3s ease;
-  }
-
-  #loading-pct {
-    font-size: 9px;
-    letter-spacing: 0.3em;
-    opacity: 0.3;
-  }
-
-  .view-btn {
-    background: none;
-    border: 1px solid rgba(255,255,255,0.2);
-    color: rgba(255,255,255,0.5);
-    font-family: 'Courier New', monospace;
-    font-size: 8px;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    padding: 5px 10px;
-    cursor: pointer;
-    transition: all 0.2s;
-    pointer-events: all;
-  }
-  .view-btn:hover, .view-btn.active {
-    border-color: rgba(255,255,255,0.8);
-    color: rgba(255,255,255,0.9);
-  }
-
-  #views {
-    position: fixed;
-    bottom: 28px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 4px;
-    z-index: 20;
-  }
-
-  /* Explode sliders */
-  #explode-panel {
-    position: fixed;
-    bottom: 28px;
-    left: 28px;
-    z-index: 20;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .explode-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .explode-label {
-    font-family: 'Courier New', monospace;
-    font-size: 8px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.45);
-    white-space: nowrap;
-    width: 110px;
-  }
-
-  .explode-val {
-    font-family: 'Courier New', monospace;
-    font-size: 8px;
-    color: rgba(255,255,255,0.3);
-    width: 22px;
-    text-align: right;
-  }
-
-  input[type=range] {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 120px;
-    height: 1px;
-    background: rgba(255,255,255,0.15);
-    outline: none;
-    cursor: pointer;
-  }
-
-  input[type=range]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 8px;
-    height: 8px;
-    background: #fff;
-    border-radius: 0;
-    cursor: pointer;
-  }
-
-  input[type=range]::-moz-range-thumb {
-    width: 8px;
-    height: 8px;
-    background: #fff;
-    border-radius: 0;
-    border: none;
-    cursor: pointer;
-  }
+  .layer-label { font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase; color: #fff; opacity: 0.35; transition: opacity 0.2s; white-space: nowrap; }
+  .layer-toggle { width: 28px; height: 2px; background: #fff; opacity: 0.25; transition: all 0.2s; flex-shrink: 0; }
+  .layer-btn.active .layer-toggle { opacity: 1; }
+  .layer-btn.active .layer-label { opacity: 0.8; }
+  .crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); opacity: 0.08; }
+  .crosshair::before, .crosshair::after { content: ''; position: absolute; background: #fff; }
+  .crosshair::before { width: 1px; height: 60px; top: -30px; left: 0; }
+  .crosshair::after { width: 60px; height: 1px; left: -30px; top: 0; }
+  #scanlines { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px); pointer-events: none; z-index: 5; }
+  #loading { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0a0a0a; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; transition: opacity 0.8s ease; }
+  #loading-title { font-size: 10px; letter-spacing: 0.4em; text-transform: uppercase; opacity: 0.5; }
+  #loading-bar-wrap { width: 200px; height: 1px; background: rgba(255,255,255,0.1); position: relative; }
+  #loading-bar { height: 1px; background: #fff; width: 0%; transition: width 0.3s ease; }
+  #loading-pct { font-size: 9px; letter-spacing: 0.3em; opacity: 0.3; }
+  .view-btn { background: none; border: 1px solid rgba(255,255,255,0.2); color: rgba(255,255,255,0.5); font-family: 'Courier New', monospace; font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase; padding: 5px 10px; cursor: pointer; transition: all 0.2s; pointer-events: all; }
+  .view-btn:hover, .view-btn.active { border-color: rgba(255,255,255,0.8); color: rgba(255,255,255,0.9); }
+  #views { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; z-index: 20; }
+  #explode-panel { position: fixed; bottom: 28px; left: 28px; z-index: 20; display: flex; flex-direction: column; gap: 10px; }
+  .explode-row { display: flex; align-items: center; gap: 10px; }
+  .explode-label { font-family: 'Courier New', monospace; font-size: 8px; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(255,255,255,0.45); white-space: nowrap; width: 110px; }
+  .explode-val { font-family: 'Courier New', monospace; font-size: 8px; color: rgba(255,255,255,0.3); width: 22px; text-align: right; }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 120px; height: 1px; background: rgba(255,255,255,0.15); outline: none; cursor: pointer; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 8px; height: 8px; background: #fff; border-radius: 0; cursor: pointer; }
+  input[type=range]::-moz-range-thumb { width: 8px; height: 8px; background: #fff; border-radius: 0; border: none; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -298,8 +71,16 @@
 </div>
 
 <div id="scanlines"></div>
-
 <div id="canvas-container"></div>
+<canvas id="pixel-overlay"></canvas>
+<canvas id="marathon-overlay"></canvas>
+
+<div id="tech-toggle">
+  <span class="tech-toggle-label">Tech</span>
+  <div class="toggle-track" id="tech-track">
+    <div class="toggle-thumb"></div>
+  </div>
+</div>
 
 <div id="hud">
   <div class="hud-corner" id="hud-tl">
@@ -312,11 +93,7 @@
     B+W PROJECTION SYSTEM<br>
     <span id="cam-angle">—</span>
   </div>
-  <div class="hud-corner" id="hud-bl">
-    <br>
-    <br>
-    
-  </div>
+  <div class="hud-corner" id="hud-bl"></div>
   <div class="hud-corner" id="hud-br">
     <span id="fps-counter">—</span><br>
     SECTIONS ACTIVE<br>
@@ -326,30 +103,12 @@
 </div>
 
 <div id="controls">
-  <button class="layer-btn active" data-layer="0">
-    <span class="layer-toggle"></span>
-    <span class="layer-label">Release Spaces</span>
-  </button>
-  <button class="layer-btn active" data-layer="1">
-    <span class="layer-toggle"></span>
-    <span class="layer-label">Compressed Spaces</span>
-  </button>
-  <button class="layer-btn active" data-layer="2">
-    <span class="layer-toggle"></span>
-    <span class="layer-label">Infrastructure</span>
-  </button>
-  <button class="layer-btn active" data-layer="3">
-    <span class="layer-toggle"></span>
-    <span class="layer-label">Drawings</span>
-  </button>
-  <button class="layer-btn active" data-layer="4">
-    <span class="layer-toggle"></span>
-    <span class="layer-label">Dashed Lines</span>
-  </button>
-  <button class="layer-btn active" data-layer="5">
-    <span class="layer-toggle"></span>
-    <span class="layer-label">Frame</span>
-  </button>
+  <button class="layer-btn active" data-layer="0"><span class="layer-toggle"></span><span class="layer-label">Release Spaces</span></button>
+  <button class="layer-btn active" data-layer="1"><span class="layer-toggle"></span><span class="layer-label">Compressed Spaces</span></button>
+  <button class="layer-btn active" data-layer="2"><span class="layer-toggle"></span><span class="layer-label">Infrastructure</span></button>
+  <button class="layer-btn active" data-layer="3"><span class="layer-toggle"></span><span class="layer-label">Drawings</span></button>
+  <button class="layer-btn active" data-layer="4"><span class="layer-toggle"></span><span class="layer-label">Dashed Lines</span></button>
+  <button class="layer-btn active" data-layer="5"><span class="layer-toggle"></span><span class="layer-label">Frame</span></button>
 </div>
 
 <div id="views">
@@ -378,7 +137,6 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 
 <script>
-// ─── Scene Setup ─────────────────────────────────────────────────────────────
 const container = document.getElementById('canvas-container');
 const W = window.innerWidth, H = window.innerHeight;
 
@@ -395,7 +153,6 @@ container.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0a0a0a);
 
-
 const camera = new THREE.PerspectiveCamera(42, W / H, 0.1, 1000);
 camera.position.set(18, 12, 22);
 
@@ -408,8 +165,7 @@ controls.zoomSpeed = 0.8;
 controls.minDistance = 2;
 controls.maxDistance = 600;
 
-// ─── Lighting ─────────────────────────────────────────────────────────────────
-// Hard directional — Denari's drawing-instrument shadow logic
+// Lighting
 const sun = new THREE.DirectionalLight(0xffffff, 1.4);
 sun.position.set(10, 20, 10);
 sun.castShadow = true;
@@ -422,93 +178,133 @@ sun.shadow.camera.top = 40;
 sun.shadow.camera.bottom = -40;
 sun.shadow.bias = -0.001;
 scene.add(sun);
-
-// Rim light from below — industrial / infrastructural
 const rim = new THREE.DirectionalLight(0xffffff, 0.3);
 rim.position.set(-8, -5, -12);
 scene.add(rim);
-
-// Ambient — very low, keeps shadows readable
 const ambient = new THREE.AmbientLight(0xffffff, 0.12);
 scene.add(ambient);
-
-// Fill — cool, slight
 const fill = new THREE.HemisphereLight(0xcccccc, 0x222222, 0.25);
 scene.add(fill);
 
-// ─── Material Definitions ────────────────────────────────────────────────────
-//
-// GLB 1 — Release Spaces: ghost white, very transparent, smooth
+// Materials
 const mat_release = new THREE.MeshPhysicalMaterial({
-  color: 0xffffff,
-  opacity: 0.18,
-  transparent: true,
-  roughness: 0.05,
-  metalness: 0.0,
-  side: THREE.DoubleSide,
-  depthWrite: false,
+  color: 0xffffff, opacity: 0.18, transparent: true,
+  roughness: 0.05, metalness: 0.0, side: THREE.DoubleSide, depthWrite: false,
 });
 
-// GLB 2 — Compressed Spaces: solid white, matte, sculptural
 const mat_compressed = new THREE.MeshStandardMaterial({
-  color: 0xffffff,
-  opacity: 1.0,
-  transparent: false,
-  roughness: 0.9,
-  metalness: 0.0,
+  color: 0xffffff, opacity: 1.0, transparent: false,
+  roughness: 0.9, metalness: 0.0, side: THREE.DoubleSide,
+});
+
+// ─── Dither Shader ────────────────────────────────────────────────────────────
+// 4x4 Bayer ordered dither. Pure float arithmetic — no arrays, no dynamic
+// indexing, fully GLSL ES 1.0 compatible. Gives a flat 1-bit pixelated look.
+const mat_dither = new THREE.ShaderMaterial({
+  uniforms: {
+    uTime:     { value: 0.0 },
+    uLightDir: { value: new THREE.Vector3(0.5, 1.0, 0.5).normalize() },
+    uPixelSize:{ value: 3.0 },
+  },
+  vertexShader: `
+    precision mediump float;
+    varying vec3 vNormal;
+    void main() {
+      vNormal = normalize(normalMatrix * normal);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    precision mediump float;
+    uniform float uTime;
+    uniform vec3  uLightDir;
+    uniform float uPixelSize;
+    varying vec3 vNormal;
+
+    float bayer4(float x, float y) {
+      float v = 0.0;
+      v += (1.0 - step(0.5, abs(x-0.0))) * (1.0 - step(0.5, abs(y-0.0))) *  0.0;
+      v += (1.0 - step(0.5, abs(x-1.0))) * (1.0 - step(0.5, abs(y-0.0))) *  8.0;
+      v += (1.0 - step(0.5, abs(x-2.0))) * (1.0 - step(0.5, abs(y-0.0))) *  2.0;
+      v += (1.0 - step(0.5, abs(x-3.0))) * (1.0 - step(0.5, abs(y-0.0))) * 10.0;
+      v += (1.0 - step(0.5, abs(x-0.0))) * (1.0 - step(0.5, abs(y-1.0))) * 12.0;
+      v += (1.0 - step(0.5, abs(x-1.0))) * (1.0 - step(0.5, abs(y-1.0))) *  4.0;
+      v += (1.0 - step(0.5, abs(x-2.0))) * (1.0 - step(0.5, abs(y-1.0))) * 14.0;
+      v += (1.0 - step(0.5, abs(x-3.0))) * (1.0 - step(0.5, abs(y-1.0))) *  6.0;
+      v += (1.0 - step(0.5, abs(x-0.0))) * (1.0 - step(0.5, abs(y-2.0))) *  3.0;
+      v += (1.0 - step(0.5, abs(x-1.0))) * (1.0 - step(0.5, abs(y-2.0))) * 11.0;
+      v += (1.0 - step(0.5, abs(x-2.0))) * (1.0 - step(0.5, abs(y-2.0))) *  1.0;
+      v += (1.0 - step(0.5, abs(x-3.0))) * (1.0 - step(0.5, abs(y-2.0))) *  9.0;
+      v += (1.0 - step(0.5, abs(x-0.0))) * (1.0 - step(0.5, abs(y-3.0))) * 15.0;
+      v += (1.0 - step(0.5, abs(x-1.0))) * (1.0 - step(0.5, abs(y-3.0))) *  7.0;
+      v += (1.0 - step(0.5, abs(x-2.0))) * (1.0 - step(0.5, abs(y-3.0))) * 13.0;
+      v += (1.0 - step(0.5, abs(x-3.0))) * (1.0 - step(0.5, abs(y-3.0))) *  5.0;
+      return v / 16.0;
+    }
+
+    // Cycle through 4 vivid colors over time — each face lights in a different hue
+    vec3 palette(float t) {
+      // 4-stop palette: cyan, red, yellow, violet — snapped in quarters
+      float s = mod(t, 4.0);
+      vec3 c0 = vec3(0.04, 0.78, 1.00); // UESC cyan
+      vec3 c1 = vec3(1.00, 0.24, 0.24); // runner red
+      vec3 c2 = vec3(1.00, 0.86, 0.00); // faction yellow
+      vec3 c3 = vec3(0.70, 0.24, 1.00); // deep violet
+      if (s < 1.0) return mix(c0, c1, s);
+      if (s < 2.0) return mix(c1, c2, s - 1.0);
+      if (s < 3.0) return mix(c2, c3, s - 2.0);
+      return mix(c3, c0, s - 3.0);
+    }
+
+    void main() {
+      vec2 px = floor(gl_FragCoord.xy / uPixelSize);
+      float x = mod(px.x, 4.0);
+      float y = mod(px.y, 4.0);
+
+      vec3 n = normalize(vNormal);
+      float diff = clamp(dot(n, normalize(uLightDir)), 0.0, 1.0);
+      float brightness = 0.2 + diff * 0.8;
+      float scan = sin(px.y * 0.3 - uTime * 0.6) * 0.04;
+      brightness = clamp(brightness + scan, 0.0, 1.0);
+
+      float thresh = bayer4(x, y);
+      float d = step(thresh, brightness);
+
+      // Slow color cycle — shifts every ~4s, different per pixel cluster for variety
+      float colorPhase = uTime * 0.18 + px.x * 0.004 + px.y * 0.003;
+      vec3 onColor = palette(colorPhase);
+      vec3 offColor = vec3(0.02, 0.02, 0.03);
+
+      vec3 col = mix(offColor, onColor, d);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
   side: THREE.DoubleSide,
 });
 
-// GLB 3 — Infrastructure: dark charcoal, semi-transparent, industrial
 const mat_infra = new THREE.MeshStandardMaterial({
-  color: 0x1a1a1a,
-  opacity: 0.75,
-  transparent: true,
-  roughness: 0.6,
-  metalness: 0.4,
-  wireframe: false,
-  side: THREE.DoubleSide,
+  color: 0x1a1a1a, opacity: 0.75, transparent: true,
+  roughness: 0.6, metalness: 0.4, wireframe: false, side: THREE.DoubleSide,
 });
-
-// Wireframe overlay for infrastructure
 const mat_infra_wire = new THREE.MeshBasicMaterial({
-  color: 0x555555,
-  wireframe: true,
-  opacity: 0.15,
-  transparent: true,
+  color: 0x555555, wireframe: true, opacity: 0.15, transparent: true,
 });
-
-// GLB 4 — Drawings: LINE_STRIP geometry — needs LineBasicMaterial, not mesh material
-const mat_drawings = new THREE.LineBasicMaterial({
-  color: 0xffffff,
-});
-
-// GLB 5 — Dashed Lines: triangle mesh geometry, force white unlit
-const mat_dashed = new THREE.MeshBasicMaterial({
-  color: 0xffffff,
-  side: THREE.DoubleSide,
-});
-
-// GLB 6 — Frame: mid-grey, near-opaque, structural
+const mat_drawings = new THREE.LineBasicMaterial({ color: 0xffffff });
+const mat_dashed = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
 const mat_frame = new THREE.MeshStandardMaterial({
-  color: 0xe8e8e8,
-  opacity: 0.55,
-  transparent: true,
-  roughness: 0.3,
-  metalness: 0.7,
-  side: THREE.DoubleSide,
-  depthWrite: false,
+  color: 0xe8e8e8, opacity: 0.55, transparent: true,
+  roughness: 0.3, metalness: 0.7, side: THREE.DoubleSide, depthWrite: false,
 });
 
-// ─── Layer State ─────────────────────────────────────────────────────────────
+// Layer state
 const layerGroups = [];
 const layerVisible = [true, true, true, true, true, true];
 
-// ─── GLB Loading ─────────────────────────────────────────────────────────────
+// GLB loading
 const loader = new THREE.GLTFLoader();
 const glbFiles = [
   { path: '1 - release spaces.glb',    mat: mat_release,   extra: null,           name: 'release' },
-  { path: '2 - compressed spaces.glb', mat: mat_compressed,extra: null,           name: 'compressed' },
+  { path: '2 - compressed spaces.glb', mat: mat_compressed, extra: null,          name: 'compressed' },
   { path: '3 - infrastructure.glb',    mat: mat_infra,     extra: mat_infra_wire, name: 'infrastructure' },
   { path: '4 - drawings.glb',          mat: mat_drawings,  extra: null,           name: 'drawings' },
   { path: '5 - dashed lines.glb',      mat: mat_dashed,    extra: null,           name: 'dashed' },
@@ -520,10 +316,11 @@ const loadPct = document.getElementById('loading-pct');
 let loadedCount = 0;
 const totalFiles = glbFiles.length;
 let allLoaded = false;
+const compressedMeshes = [];
+const releaseMeshes = [];
 
 function applyMaterial(obj, mat, extra) {
-  const meshes = [];
-  const lines = [];
+  const meshes = [], lines = [];
   obj.traverse(child => {
     if (child.isMesh) meshes.push(child);
     else if (child.isLine) lines.push(child);
@@ -538,18 +335,13 @@ function applyMaterial(obj, mat, extra) {
       child.add(wireMesh);
     }
   });
-  // For line geometry (GLB 4), override with white LineBasicMaterial
   lines.forEach(child => {
     child.material = mat instanceof THREE.LineBasicMaterial
-      ? mat
-      : new THREE.LineBasicMaterial({ color: 0xffffff });
+      ? mat : new THREE.LineBasicMaterial({ color: 0xffffff });
   });
 }
 
 const loadedModels = [];
-
-// ─── Scene Root — rotates everything to align geometry with world axes ────────
-// Building is 27.881° off world Y axis in plan view
 const sceneRoot = new THREE.Group();
 sceneRoot.rotation.y = THREE.MathUtils.degToRad(27.881);
 scene.add(sceneRoot);
@@ -559,165 +351,93 @@ glbFiles.forEach((file, idx) => {
   group.name = file.name;
   group.visible = true;
   layerGroups.push(group);
-  sceneRoot.add(group); // add to sceneRoot, not scene directly
+  sceneRoot.add(group);
 
-  loader.load(
-    file.path,
-    (gltf) => {
-      console.log('✓ Loaded:', file.path);
-      const model = gltf.scene;
-      applyMaterial(model, file.mat, file.extra);
-      group.add(model);
-      loadedModels.push(group);
+  loader.load(file.path, (gltf) => {
+    console.log('✓ Loaded:', file.path);
+    const model = gltf.scene;
+    applyMaterial(model, file.mat, file.extra);
+    group.add(model);
+    loadedModels.push(group);
 
-      // Register explode data after model is in scene
-      if (idx === 0) registerReleaseExplode(group);
-      if (idx === 1) registerCompressedExplode(group);
-      loadedCount++;
-      const pct = Math.round((loadedCount / totalFiles) * 100);
-      loadBar.style.width = pct + '%';
-      loadPct.textContent = String(pct).padStart(3, '0') + '%';
-      if (loadedCount === totalFiles) onAllLoaded();
-    },
-    undefined,
-    (err) => {
-      console.error('✗ Failed:', file.path, err);
-      loadedCount++;
-      const pct = Math.round((loadedCount / totalFiles) * 100);
-      loadBar.style.width = pct + '%';
-      loadPct.textContent = String(pct).padStart(3, '0') + '%';
-      if (loadedCount === totalFiles) onAllLoaded();
-    }
-  );
+    if (idx === 0) model.traverse(child => { if (child.isMesh && !child.userData.isWireframe) releaseMeshes.push(child); });
+    if (idx === 1) model.traverse(child => { if (child.isMesh && !child.userData.isWireframe) compressedMeshes.push(child); });
+    if (idx === 0) registerReleaseExplode(group);
+    if (idx === 1) registerCompressedExplode(group);
+
+    loadedCount++;
+    const pct = Math.round((loadedCount / totalFiles) * 100);
+    loadBar.style.width = pct + '%';
+    loadPct.textContent = String(pct).padStart(3, '0') + '%';
+    if (loadedCount === totalFiles) onAllLoaded();
+  }, undefined, (err) => {
+    console.error('✗ Failed:', file.path, err);
+    loadedCount++;
+    const pct = Math.round((loadedCount / totalFiles) * 100);
+    loadBar.style.width = pct + '%';
+    loadPct.textContent = String(pct).padStart(3, '0') + '%';
+    if (loadedCount === totalFiles) onAllLoaded();
+  });
 });
 
 function onAllLoaded() {
   allLoaded = true;
-
-  // Safely compute bounding box only from groups with real geometry
   const bb = new THREE.Box3();
   loadedModels.forEach(group => {
     const groupBB = new THREE.Box3().setFromObject(group);
     if (!groupBB.isEmpty()) bb.union(groupBB);
   });
+  if (bb.isEmpty()) bb.set(new THREE.Vector3(-10,-10,-10), new THREE.Vector3(10,10,10));
 
-  // Fallback if bounding box is still empty
-  if (bb.isEmpty()) {
-    bb.set(new THREE.Vector3(-10,-10,-10), new THREE.Vector3(10,10,10));
-  }
-
-  const center = new THREE.Vector3();
-  const size = new THREE.Vector3();
+  const center = new THREE.Vector3(), size = new THREE.Vector3();
   bb.getCenter(center);
   bb.getSize(size);
   const maxDim = Math.max(size.x, size.y, size.z);
   const dist = maxDim * 1.6;
-
   controls.target.copy(center);
-  camera.position.set(
-    center.x + dist * 0.7,
-    center.y + dist * 0.5,
-    center.z + dist * 0.8
-  );
+  camera.position.set(center.x + dist*0.7, center.y + dist*0.5, center.z + dist*0.8);
   controls.update();
-
   storedCenter = center.clone();
   storedDist = dist;
 
-  // Position cloud around the massing (GLBs 1-3)
-
-
-  // ─── PNG Image Planes ────────────────────────────────────────────────────────
-  // Exact vertex positions extracted from picturelocations.glb
-  // Black background treated as transparent via custom shader
-
   const textureLoader = new THREE.TextureLoader();
-
   function makePlaneFromVerts(v0, v1, v2, v3) {
-    // Build custom geometry from 4 exact corner verts
-    // v0=topLeft, v1=bottomLeft, v2=topRight, v3=bottomRight
     const geo = new THREE.BufferGeometry();
-    const positions = new Float32Array([
-      v0.x, v0.y, v0.z,
-      v1.x, v1.y, v1.z,
-      v2.x, v2.y, v2.z,
-      v3.x, v3.y, v3.z,
-    ]);
-    const uvs = new Float32Array([
-      0, 1,
-      0, 0,
-      1, 1,
-      1, 0,
-    ]);
-    const indices = new Uint16Array([0, 1, 2, 1, 3, 2]);
+    const positions = new Float32Array([v0.x,v0.y,v0.z, v1.x,v1.y,v1.z, v2.x,v2.y,v2.z, v3.x,v3.y,v3.z]);
+    const uvs = new Float32Array([0,1, 0,0, 1,1, 1,0]);
+    const indices = new Uint16Array([0,1,2, 1,3,2]);
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
     geo.setIndex(new THREE.BufferAttribute(indices, 1));
     geo.computeVertexNormals();
     return geo;
   }
-
-  // Shader material that treats black as transparent
   function makeDrawingMaterial(texture) {
     return new THREE.ShaderMaterial({
       uniforms: { map: { value: texture }, opacity: { value: 0.92 } },
-      vertexShader: `
-        varying vec2 vUv;
-        void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
-      `,
-      fragmentShader: `
-        uniform sampler2D map;
-        uniform float opacity;
-        varying vec2 vUv;
-        void main() {
-          vec4 c = texture2D(map, vUv);
-          // Luminance of pixel — black becomes transparent
-          float lum = dot(c.rgb, vec3(0.299, 0.587, 0.114));
-          gl_FragColor = vec4(c.rgb, lum * opacity);
-        }
-      `,
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
+      vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+      fragmentShader: `uniform sampler2D map; uniform float opacity; varying vec2 vUv; void main() { vec4 c = texture2D(map, vUv); float lum = dot(c.rgb, vec3(0.299, 0.587, 0.114)); gl_FragColor = vec4(c.rgb, lum * opacity); }`,
+      transparent: true, depthWrite: false, side: THREE.DoubleSide,
     });
   }
 
-  // Node 0 (unnamed) → section2-01.png — angled plane
-  // Verts: [0] top-left, [1] bottom-left, [2] top-right, [3] bottom-right
   textureLoader.load('section2-01.png', tex => {
-    const geo = makePlaneFromVerts(
-      new THREE.Vector3(481.176, 88.863,  1555.137),  // top-left
-      new THREE.Vector3(481.176, -35.643, 1555.137),  // bottom-left
-      new THREE.Vector3(647.250, 88.863,  1642.997),  // top-right
-      new THREE.Vector3(647.250, -35.643, 1642.997),  // bottom-right
-    );
-    const mesh = new THREE.Mesh(geo, makeDrawingMaterial(tex));
-    sceneRoot.add(mesh);
+    sceneRoot.add(new THREE.Mesh(makePlaneFromVerts(
+      new THREE.Vector3(481.176, 88.863, 1555.137), new THREE.Vector3(481.176, -35.643, 1555.137),
+      new THREE.Vector3(647.250, 88.863, 1642.997), new THREE.Vector3(647.250, -35.643, 1642.997)
+    ), makeDrawingMaterial(tex)));
   });
-
-  // Node 1 → section1-01.png — larger angled vertical plane (3x3 grid of verts)
-  // Use corners: [0]=bottom-right, [2]=top-right, [6]=bottom-left, [8]=top-left
   textureLoader.load('section1-01.png', tex => {
-    const geo = makePlaneFromVerts(
-      new THREE.Vector3(538.705, 98.368,  1391.823),  // top-right
-      new THREE.Vector3(538.705, -32.080, 1391.823),  // bottom-right
-      new THREE.Vector3(446.652, 98.368,  1565.824),  // top-left
-      new THREE.Vector3(446.652, -32.080, 1565.824),  // bottom-left
-    );
-    const mesh = new THREE.Mesh(geo, makeDrawingMaterial(tex));
-    sceneRoot.add(mesh);
+    sceneRoot.add(new THREE.Mesh(makePlaneFromVerts(
+      new THREE.Vector3(538.705, 98.368, 1391.823), new THREE.Vector3(538.705, -32.080, 1391.823),
+      new THREE.Vector3(446.652, 98.368, 1565.824), new THREE.Vector3(446.652, -32.080, 1565.824)
+    ), makeDrawingMaterial(tex)));
   });
-
-  // Node 2 → plan1-01.png — horizontal plan, Y=99.322 throughout
   textureLoader.load('plan1-01.png', tex => {
-    const geo = makePlaneFromVerts(
-      new THREE.Vector3(517.111, 99.322, 1532.247),  // v0
-      new THREE.Vector3(567.299, 99.322, 1437.381),  // v1
-      new THREE.Vector3(659.825, 99.322, 1607.749),  // v2
-      new THREE.Vector3(710.013, 99.322, 1512.883),  // v3
-    );
-    const mesh = new THREE.Mesh(geo, makeDrawingMaterial(tex));
-    sceneRoot.add(mesh);
+    sceneRoot.add(new THREE.Mesh(makePlaneFromVerts(
+      new THREE.Vector3(517.111, 99.322, 1532.247), new THREE.Vector3(567.299, 99.322, 1437.381),
+      new THREE.Vector3(659.825, 99.322, 1607.749), new THREE.Vector3(710.013, 99.322, 1512.883)
+    ), makeDrawingMaterial(tex)));
   });
 
   const loading = document.getElementById('loading');
@@ -725,40 +445,29 @@ function onAllLoaded() {
   setTimeout(() => loading.style.display = 'none', 900);
 }
 
-let storedCenter = new THREE.Vector3();
-let storedDist = 20;
+let storedCenter = new THREE.Vector3(), storedDist = 20;
 
-// ─── View Presets ─────────────────────────────────────────────────────────────
+// View presets
 const viewPresets = {
-  persp: (c, d) => ({ pos: new THREE.Vector3(c.x + d*0.7, c.y + d*0.5, c.z + d*0.8), target: c.clone() }),
-  top:   (c, d) => ({ pos: new THREE.Vector3(c.x, c.y + d*1.5, c.z + 0.01), target: c.clone() }),
-  front: (c, d) => ({ pos: new THREE.Vector3(c.x, c.y, c.z + d*1.5), target: c.clone() }),
-  side:  (c, d) => ({ pos: new THREE.Vector3(c.x + d*1.5, c.y, c.z), target: c.clone() }),
-  iso:   (c, d) => ({ pos: new THREE.Vector3(c.x + d, c.y + d, c.z + d), target: c.clone() }),
+  persp: (c,d) => ({ pos: new THREE.Vector3(c.x+d*0.7, c.y+d*0.5, c.z+d*0.8), target: c.clone() }),
+  top:   (c,d) => ({ pos: new THREE.Vector3(c.x, c.y+d*1.5, c.z+0.01), target: c.clone() }),
+  front: (c,d) => ({ pos: new THREE.Vector3(c.x, c.y, c.z+d*1.5), target: c.clone() }),
+  side:  (c,d) => ({ pos: new THREE.Vector3(c.x+d*1.5, c.y, c.z), target: c.clone() }),
+  iso:   (c,d) => ({ pos: new THREE.Vector3(c.x+d, c.y+d, c.z+d), target: c.clone() }),
 };
-
 document.querySelectorAll('.view-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-
     const key = btn.dataset.view;
     if (!allLoaded) return;
     const preset = viewPresets[key](storedCenter, storedDist);
-
-    // Animate camera
-    const startPos = camera.position.clone();
-    const startTarget = controls.target.clone();
-    const endPos = preset.pos;
-    const endTarget = preset.target;
-    let t = 0;
-    const dur = 60; // frames
-
+    const startPos = camera.position.clone(), startTarget = controls.target.clone();
+    let t = 0; const dur = 60;
     function animateView() {
-      t++;
-      const k = 1 - Math.pow(1 - t / dur, 3);
-      camera.position.lerpVectors(startPos, endPos, k);
-      controls.target.lerpVectors(startTarget, endTarget, k);
+      t++; const k = 1 - Math.pow(1 - t/dur, 3);
+      camera.position.lerpVectors(startPos, preset.pos, k);
+      controls.target.lerpVectors(startTarget, preset.target, k);
       controls.update();
       if (t < dur) requestAnimationFrame(animateView);
     }
@@ -766,7 +475,7 @@ document.querySelectorAll('.view-btn').forEach(btn => {
   });
 });
 
-// ─── Layer Toggle ─────────────────────────────────────────────────────────────
+// Layer toggle
 document.querySelectorAll('.layer-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const idx = parseInt(btn.dataset.layer);
@@ -776,134 +485,254 @@ document.querySelectorAll('.layer-btn').forEach(btn => {
   });
 });
 
-// ─── HUD Update ──────────────────────────────────────────────────────────────
+// HUD
 const camPosEl = document.getElementById('cam-pos');
 const camAngleEl = document.getElementById('cam-angle');
 const fpsEl = document.getElementById('fps-counter');
-let lastTime = performance.now();
-let frameCount = 0;
-let fps = 0;
-
+let lastTime = performance.now(), frameCount = 0, fps = 0;
 function updateHUD() {
   const p = camera.position;
   camPosEl.textContent = `X${p.x.toFixed(1)} Y${p.y.toFixed(1)} Z${p.z.toFixed(1)}`;
   const dir = new THREE.Vector3();
   camera.getWorldDirection(dir);
-  const az = (Math.atan2(dir.x, dir.z) * 180 / Math.PI).toFixed(0);
-  const el = (Math.asin(dir.y) * 180 / Math.PI).toFixed(0);
+  const az = (Math.atan2(dir.x, dir.z) * 180/Math.PI).toFixed(0);
+  const el = (Math.asin(dir.y) * 180/Math.PI).toFixed(0);
   camAngleEl.textContent = `AZ${az}° EL${el}°`;
   fpsEl.textContent = `${fps} FPS`;
 }
 
-// ─── Explode System ───────────────────────────────────────────────────────────
-// Release spaces  — individual pieces fly UP  (sorted bottom→top, each gets higher rank)
-// Compressed spaces — individual pieces fly DOWN (sorted top→bottom, each gets lower rank)
-
-const explodeData = {
-  release:    [],
-  compressed: [],
-};
-
-const EXPLODE_SPACING_RELEASE    = 3;
-const EXPLODE_SPACING_COMPRESSED = 3;
-
+// Explode system
+const explodeData = { release: [], compressed: [] };
+const EXPLODE_SPACING_RELEASE = 3, EXPLODE_SPACING_COMPRESSED = 3;
 function registerReleaseExplode(group) {
   setTimeout(() => {
     const pieces = [];
     group.traverse(child => {
       if (!child.isMesh || child.userData.isWireframe) return;
-      const wp = new THREE.Vector3();
-      child.getWorldPosition(wp);
+      const wp = new THREE.Vector3(); child.getWorldPosition(wp);
       pieces.push({ mesh: child, originY: wp.y });
     });
-    // Sort bottom to top — bottom piece (rank 0) stays, top piece moves most
-    pieces.sort((a, b) => a.originY - b.originY);
-    pieces.forEach((p, i) => {
-      explodeData.release.push({ mesh: p.mesh, originY: p.originY, rank: i });
-    });
+    pieces.sort((a,b) => a.originY - b.originY);
+    pieces.forEach((p,i) => explodeData.release.push({ mesh: p.mesh, originY: p.originY, rank: i }));
   }, 200);
 }
-
 function registerCompressedExplode(group) {
   setTimeout(() => {
     const pieces = [];
     group.traverse(child => {
       if (!child.isMesh || child.userData.isWireframe) return;
-      const wp = new THREE.Vector3();
-      child.getWorldPosition(wp);
+      const wp = new THREE.Vector3(); child.getWorldPosition(wp);
       pieces.push({ mesh: child, originY: wp.y });
     });
-    // Sort top to bottom — top piece (rank 0) stays, bottom piece drops most
-    pieces.sort((a, b) => b.originY - a.originY);
-    pieces.forEach((p, i) => {
-      explodeData.compressed.push({ mesh: p.mesh, originY: p.originY, rank: i });
-    });
+    pieces.sort((a,b) => b.originY - a.originY);
+    pieces.forEach((p,i) => explodeData.compressed.push({ mesh: p.mesh, originY: p.originY, rank: i }));
   }, 200);
 }
-
-let targetExplodeRelease    = 0;
-let targetExplodeCompressed = 0;
-let currentExplodeRelease    = 0;
-let currentExplodeCompressed = 0;
-
+let targetExplodeRelease = 0, targetExplodeCompressed = 0;
+let currentExplodeRelease = 0, currentExplodeCompressed = 0;
 function applyExplode() {
   currentExplodeRelease    += (targetExplodeRelease    - currentExplodeRelease)    * 0.05;
   currentExplodeCompressed += (targetExplodeCompressed - currentExplodeCompressed) * 0.05;
+  const tR = currentExplodeRelease/100, tC = currentExplodeCompressed/100;
+  explodeData.release.forEach(d => { d.mesh.position.y = d.originY + d.rank * EXPLODE_SPACING_RELEASE * tR; });
+  explodeData.compressed.forEach(d => { d.mesh.position.y = d.originY - d.rank * EXPLODE_SPACING_COMPRESSED * tC; });
+}
+document.getElementById('slider-release').addEventListener('input', e => {
+  targetExplodeRelease = parseFloat(e.target.value);
+  document.getElementById('val-release').textContent = e.target.value;
+});
+document.getElementById('slider-compressed').addEventListener('input', e => {
+  targetExplodeCompressed = parseFloat(e.target.value);
+  document.getElementById('val-compressed').textContent = e.target.value;
+});
 
-  const tR = currentExplodeRelease    / 100;
-  const tC = currentExplodeCompressed / 100;
+// Canvas overlays (marathon system — kept intact)
+const pixelCanvas = document.getElementById('pixel-overlay');
+const pixelCtx = pixelCanvas.getContext('2d');
+pixelCanvas.width = window.innerWidth;
+pixelCanvas.height = window.innerHeight;
+const mCanvas = document.getElementById('marathon-overlay');
+const mCtx = mCanvas.getContext('2d');
+mCanvas.width = window.innerWidth;
+mCanvas.height = window.innerHeight;
 
-  explodeData.release.forEach(d => {
-    d.mesh.position.y = d.originY + d.rank * EXPLODE_SPACING_RELEASE * tR;
+let techEnabled = false;
+let compressedIntensity = 0, releaseIntensity = 0;
+
+// ─── Tech Toggle ──────────────────────────────────────────────────────────────
+// ON  → swap compressed to dither shader + activate canvas overlays
+// OFF → restore original mat + clear canvases
+const techTrack = document.getElementById('tech-track');
+techTrack.addEventListener('click', () => {
+  techEnabled = !techEnabled;
+  techTrack.classList.toggle('on', techEnabled);
+  pixelCanvas.classList.toggle('active', techEnabled);
+
+  // Swap compressed spaces material
+  compressedMeshes.forEach(mesh => {
+    mesh.material = techEnabled ? mat_dither : mat_compressed;
   });
 
-  explodeData.compressed.forEach(d => {
-    d.mesh.position.y = d.originY - d.rank * EXPLODE_SPACING_COMPRESSED * tC;
-  });
+  if (!techEnabled) {
+    pixelCtx.clearRect(0, 0, pixelCanvas.width, pixelCanvas.height);
+    mCtx.clearRect(0, 0, mCanvas.width, mCanvas.height);
+    compressedBars.length = 0;
+    crossMarks.length = 0;
+    compressedIntensity = 0;
+    releaseIntensity = 0;
+  }
+});
+
+// Canvas effect systems (marathon — release spaces crosses only now)
+const compressedBars = [];
+const MAX_BARS = 28;
+const MARATHON_COLORS = [
+  [255,60,60],[60,200,255],[255,220,0],[180,60,255],[255,255,255],[0,255,180],
+];
+function spawnBar(cx, cy) {
+  if (compressedBars.length >= MAX_BARS) compressedBars.splice(0, 4);
+  const count = 1 + Math.floor(compressedIntensity * 4);
+  for (let i = 0; i < count; i++) {
+    const col = MARATHON_COLORS[Math.floor(Math.random() * MARATHON_COLORS.length)];
+    const h = 1 + Math.floor(Math.random() * (2 + compressedIntensity * 18));
+    const spread = 30 + compressedIntensity * (window.innerHeight * 0.6);
+    const y = cy + (Math.random() - 0.5) * spread;
+    const chrOffset = 2 + Math.floor(compressedIntensity * 14);
+    const fullWidth = Math.random() < 0.4 + compressedIntensity * 0.4;
+    const barW = fullWidth ? window.innerWidth : 40 + Math.random() * (window.innerWidth * 0.7);
+    const barX = fullWidth ? 0 : Math.random() * (window.innerWidth - barW);
+    compressedBars.push({ x: barX, y: Math.round(y), w: barW, h, r: col[0], g: col[1], b: col[2], chrOffset, alpha: 0.25 + Math.random() * (0.45 + compressedIntensity * 0.3), life: 3 + Math.floor(Math.random() * (8 + compressedIntensity * 12)), maxLife: 0 });
+    compressedBars[compressedBars.length-1].maxLife = compressedBars[compressedBars.length-1].life;
+  }
+}
+function updateBars() {
+  for (let i = compressedBars.length-1; i >= 0; i--) {
+    compressedBars[i].life--;
+    if (compressedBars[i].life <= 0) compressedBars.splice(i, 1);
+  }
+}
+function drawBars() {
+  pixelCtx.clearRect(0, 0, pixelCanvas.width, pixelCanvas.height);
+  for (const b of compressedBars) {
+    const lf = b.life / b.maxLife;
+    const alpha = b.alpha * Math.pow(lf, 0.7);
+    if (alpha < 0.01) continue;
+    pixelCtx.fillStyle = `rgba(${b.r},0,0,${alpha*0.8})`; pixelCtx.fillRect(b.x - b.chrOffset, b.y, b.w, b.h);
+    pixelCtx.fillStyle = `rgba(0,${b.g},0,${alpha*0.8})`; pixelCtx.fillRect(b.x, b.y, b.w, b.h);
+    pixelCtx.fillStyle = `rgba(0,0,${b.b},${alpha*0.8})`; pixelCtx.fillRect(b.x + b.chrOffset, b.y, b.w, b.h);
+    pixelCtx.fillStyle = `rgba(${b.r},${b.g},${b.b},${alpha*0.5})`; pixelCtx.fillRect(b.x, b.y, b.w, b.h);
+  }
 }
 
-// Wire up sliders
-const sliderRelease    = document.getElementById('slider-release');
-const sliderCompressed = document.getElementById('slider-compressed');
-const valRelease       = document.getElementById('val-release');
-const valCompressed    = document.getElementById('val-compressed');
+const crossMarks = [];
+const MAX_CROSSES = 60;
+const CROSS_THICK = 0.8;
+function spawnBreath(cx, cy) {
+  if (crossMarks.length >= MAX_CROSSES) crossMarks.splice(0, 3);
+  const count = 1 + Math.floor(releaseIntensity * 4);
+  const CW = mCanvas.width, CH = mCanvas.height;
+  for (let i = 0; i < count; i++) {
+    const arm = 4 + Math.floor(releaseIntensity * 12);
+    const spread = 40 + releaseIntensity * (CH * 0.55);
+    const y = cy + (Math.random() - 0.5) * 2 * spread;
+    const x = Math.random() * CW;
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    const speed = 0.4 + Math.random() * (0.8 + releaseIntensity * 1.2);
+    const life = 12 + Math.floor(Math.random() * (18 + releaseIntensity * 20));
+    crossMarks.push({ x, y: Math.round(y), vx: dir * speed, arm, alpha: 0.18 + Math.random() * 0.22, life, maxLife: life });
+  }
+}
+function updateBreath() {
+  for (let i = crossMarks.length-1; i >= 0; i--) {
+    const c = crossMarks[i]; c.life--;
+    if (c.life <= 0) { crossMarks.splice(i, 1); continue; }
+    c.x += c.vx;
+  }
+}
+function drawBreath() {
+  mCtx.clearRect(0, 0, mCanvas.width, mCanvas.height);
+  mCtx.lineWidth = CROSS_THICK; mCtx.lineCap = 'square';
+  for (const c of crossMarks) {
+    const lf = c.life / c.maxLife;
+    const lifeMod = lf > 0.85 ? (1-lf)/0.15 : lf < 0.15 ? lf/0.15 : 1.0;
+    const alpha = c.alpha * lifeMod;
+    if (alpha < 0.008) continue;
+    mCtx.globalAlpha = alpha;
+    mCtx.beginPath(); mCtx.moveTo(c.x - c.arm, c.y); mCtx.lineTo(c.x + c.arm, c.y); mCtx.stroke();
+    mCtx.beginPath(); mCtx.moveTo(c.x, c.y - c.arm); mCtx.lineTo(c.x, c.y + c.arm); mCtx.stroke();
+  }
+  mCtx.globalAlpha = 1.0;
+}
 
-sliderRelease.addEventListener('input', () => {
-  targetExplodeRelease = parseFloat(sliderRelease.value);
-  valRelease.textContent = sliderRelease.value;
+// Raycaster for release crosses
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let mouseScreen = { x: 0, y: 0 };
+let isHoveringRelease = false;
+window.addEventListener('mousemove', e => {
+  mouse.x =  (e.clientX / window.innerWidth)  * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  mouseScreen.x = e.clientX;
+  mouseScreen.y = e.clientY;
 });
 
-sliderCompressed.addEventListener('input', () => {
-  targetExplodeCompressed = parseFloat(sliderCompressed.value);
-  valCompressed.textContent = sliderCompressed.value;
-});
-
-// ─── Render Loop ─────────────────────────────────────────────────────────────
+// Render loop
+let globalFrame = 0;
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
   applyExplode();
 
-  // FPS
+  // Advance dither time
+  if (techEnabled) mat_dither.uniforms.uTime.value += 0.016;
+
+  // Release canvas crosses (hover on release spaces)
+  if (techEnabled && allLoaded && releaseMeshes.length > 0) {
+    raycaster.setFromCamera(mouse, camera);
+    const hitsR = raycaster.intersectObjects(releaseMeshes, false);
+    isHoveringRelease = hitsR.length > 0;
+  } else {
+    isHoveringRelease = false;
+  }
+
+  if (techEnabled && isHoveringRelease)
+    releaseIntensity = Math.min(1.0, releaseIntensity + 0.014);
+  else
+    releaseIntensity = Math.max(0.0, releaseIntensity - 0.03);
+
+  if (techEnabled) {
+    if (releaseIntensity > 0.01) spawnBreath(mouseScreen.x, mouseScreen.y);
+    updateBreath(); drawBreath();
+    // Clear pixel canvas (no compressed bars any more — dither handles it)
+    pixelCtx.clearRect(0, 0, pixelCanvas.width, pixelCanvas.height);
+  } else {
+    pixelCtx.clearRect(0, 0, pixelCanvas.width, pixelCanvas.height);
+    mCtx.clearRect(0, 0, mCanvas.width, mCanvas.height);
+  }
+
   frameCount++;
   const now = performance.now();
   if (now - lastTime > 500) {
     fps = Math.round(frameCount / ((now - lastTime) / 1000));
-    frameCount = 0;
-    lastTime = now;
+    frameCount = 0; lastTime = now;
     updateHUD();
   }
 
   renderer.render(scene, camera);
+  globalFrame++;
 }
 animate();
 
-// ─── Resize ───────────────────────────────────────────────────────────────────
+// Resize
 window.addEventListener('resize', () => {
   const w = window.innerWidth, h = window.innerHeight;
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
+  pixelCanvas.width = w; pixelCanvas.height = h;
+  pixelCtx.clearRect(0, 0, w, h);
+  mCanvas.width = w; mCanvas.height = h;
+  mCtx.clearRect(0, 0, w, h);
 });
 </script>
 </body>
